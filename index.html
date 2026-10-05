@@ -48,6 +48,7 @@
     border:1.5px solid var(--borde); border-radius:8px; background:#fff;
   }
   .campo input:focus-visible{outline:2px solid #93c5fd; outline-offset:1px}
+  .hint{margin:6px 0 0; font:italic 12px Arial,sans-serif; color:#64748b}
   .tarjeta button, .acciones button{
     font:700 16px Arial,sans-serif; padding:12px 28px; border:0; border-radius:10px;
     cursor:pointer; background:#16a34a; color:#fff; width:100%;
@@ -133,7 +134,9 @@
     <h2>Identificación del alumno</h2>
     <div class="campo"><label for="fNombre">Nombre y apellido</label><input id="fNombre" autocomplete="name"></div>
     <div class="campo"><label for="fCorreo">Correo personal (recibirás ahí tu resultado)</label><input id="fCorreo" type="email" autocomplete="email"></div>
-    <div class="campo"><label for="fRut">RUT / DNI</label><input id="fRut"></div>
+    <div class="campo"><label for="fRut">RUT / DNI</label><input id="fRut" placeholder="15.634.574-1 · 15634574-1 · 156345741">
+      <p class="hint">Puedes escribirlo con puntos, guion o sin ellos: se normaliza solo
+      (para Chile queda como 15634574-1). Usa siempre el mismo: es tu identificador de intentos.</p></div>
     <div class="campo"><label for="fPais">País de origen</label><input id="fPais" autocomplete="country-name"></div>
     <button type="button" id="btnComenzar">Comenzar la prueba</button>
     <p id="msgRegistro" style="font:13px Arial,sans-serif; color:#7f1d1d; min-height:18px; margin:10px 0 0"></p>
@@ -525,7 +528,8 @@
     </fieldset>
       <div class="acciones">
         <button type="button" id="btnEnviar">Enviar respuestas</button>
-        <button type="button" id="btnOtroIntento" class="oculto" style="background:#475569">Rendir siguiente intento</button>
+        <button type="button" id="btnOtroIntento" class="oculto" style="background:#475569">Rendir siguiente intento cuando estés listo</button>
+        <button type="button" id="btnCerrar" class="oculto" style="background:#0f172a; margin-top:12px">Cerrar la prueba</button>
       </div>
     </form>
   </section>
@@ -2524,6 +2528,21 @@ const URL_BACKEND = urlMock || CONFIG.APPS_SCRIPT_URL;
 const CONFIGURADO = urlMock || !CONFIG.APPS_SCRIPT_URL.startsWith('__');
 
 const $ = id => document.getElementById(id);
+const escT = s => String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
+function normalizarRut(x, pais){
+  let s = String(x || '').toUpperCase().replace(/[\s.]/g, '');
+  if (!s) return s;
+  if (s.indexOf('-') === -1){
+    const cl = /chile/i.test(pais || '');
+    if ((cl && /^\d{7,9}[0-9K]$/.test(s)) || /^\d{8}[0-9K]$/.test(s)){
+      s = s.slice(0, -1) + '-' + s.slice(-1);
+    }
+  } else {
+    const parts = s.split('-');
+    if (parts.length === 2) s = parts[0] + '-' + parts[1];
+  }
+  return s;
+}
 let alumno = null;
 let estado = {intentos_usados:0, restantes:3, mejor:null};
 
@@ -2544,13 +2563,18 @@ function pantalllaExamen(){
   window.scrollTo({top:0});
 }
 $('btnComenzar').addEventListener('click', async () => {
+  const btn = $('btnComenzar');
+  btn.disabled = true; btn.textContent = 'Consultando intentos disponibles…';
   const nombre = $('fNombre').value.trim(), correo = $('fCorreo').value.trim(),
         rut = $('fRut').value.trim(), pais = $('fPais').value.trim();
   const msg = $('msgRegistro');
   if (!nombre || !correo || !rut || !pais) { msg.textContent = 'Completa los cuatro campos para comenzar.'; return; }
   if (!/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(correo)) { msg.textContent = 'Revisa el correo: el resultado se enviará ahí.'; return; }
-  alumno = {nombre, correo, rut, pais};
-  await consultarEstado(rut);
+  const rutN = normalizarRut(rut, pais);
+  alumno = {nombre, correo, rut: rutN, pais};
+  $('fRut').value = rutN;
+  await consultarEstado(rutN);
+  btn.disabled = false; btn.textContent = 'Comenzar la prueba';
   if (estado.restantes <= 0) {
     msg.textContent = 'Este RUT/DNI ya agotó los 3 intentos. Tu nota final es el mejor intento: ' + estado.mejor + '%.';
     return;
@@ -2598,11 +2622,35 @@ $('btnEnviar').addEventListener('click', async () => {
       return;
     }
     await consultarEstado(alumno.rut);
-    panel.className = res.aprobado ? 'aprobado' : 'reprobado';
-    panel.textContent = `Intento ${res.intento} de 3 registrado: ${res.correctas} de ${res.total} (${res.puntaje}%) · ${res.aprobado ? 'APROBADO' : 'REPROBADO'} · Mejor nota hasta ahora: ${res.mejor}% · Intentos restantes: ${res.restantes}. Enviamos el comprobante a ${alumno.correo}.`;
-    $('btnEnviar').classList.add('oculto');
-    if (res.restantes > 0) $('btnOtroIntento').classList.remove('oculto');
     document.querySelectorAll('#testForm input').forEach(i => i.disabled = true);
+    $('btnEnviar').classList.add('oculto');
+    if (res.aprobado) {
+      panel.className = 'aprobado';
+      panel.innerHTML =
+        `<p style="margin:0 0 8px; font:800 18px Arial,sans-serif">¡Felicitaciones, ${escT(alumno.nombre)}!</p>` +
+        `<p style="margin:0; font-weight:400">Has aprobado el <strong>examen</strong> con ` +
+        `${res.correctas} de ${res.total} preguntas correctas (<strong>${res.puntaje}%</strong>) en tu intento ${res.intento}. ` +
+        `Tu nota quedó registrada oficialmente y en minutos recibirás el comprobante en <strong>${escT(alumno.correo)}.</strong></p>` +
+        `<p style="margin:8px 0 0; font-weight:400">No necesitas rendir más intentos: con la aprobación tu proceso de evaluación queda cerrado. ` +
+        `Gracias por el esfuerzo y la dedicación demostrada.</p>`;
+      $('btnCerrar').classList.remove('oculto');
+    } else if (res.restantes > 0) {
+      panel.className = 'reprobado';
+      panel.innerHTML =
+        `<p style="margin:0 0 8px; font:800 18px Arial,sans-serif">Gracias por completar tu intento, ${escT(alumno.nombre)}.</p>` +
+        `<p style="margin:0; font-weight:400">Obtuviste <strong>${res.correctas} de ${res.total}</strong> (${res.puntaje}%) y se aprueba con el 100%. ` +
+        `Te ${res.restantes === 1 ? 'queda' : 'quedan'} <strong>${res.restantes}</strong> ${res.restantes === 1 ? 'intento' : 'intentos'}: repasa con calma las fuentes citadas en cada pregunta y vuelve cuando te sientas listo o lista. ` +
+        `Tu nota final será la del mejor intento, así que este resultado no te perjudica.</p>`;
+      $('btnOtroIntento').classList.remove('oculto');
+    } else {
+      panel.className = 'reprobado';
+      panel.innerHTML =
+        `<p style="margin:0 0 8px; font:800 18px Arial,sans-serif">Has completado tus 3 intentos, ${escT(alumno.nombre)}.</p>` +
+        `<p style="margin:0; font-weight:400">Tu nota final oficial es el mejor de tus intentos: <strong>${res.mejor}%</strong>. ` +
+        `El resultado quedó registrado en el acta y recibirás el comprobante en <strong>${escT(alumno.correo)}.</strong> ` +
+        `Para consultas sobre tu evaluación, escribe a tu instructor o instructora indicando tu nombre y RUT/DNI.</p>`;
+      $('btnCerrar').classList.remove('oculto');
+    }
     panel.scrollIntoView({behavior:'smooth', block:'center'});
   } catch (e) {
     panel.className = 'bloqueado';
@@ -2615,8 +2663,22 @@ $('btnOtroIntento').addEventListener('click', () => {
   document.querySelectorAll('fieldset.sin-responder').forEach(f => f.classList.remove('sin-responder'));
   $('panelResultado').className = ''; $('panelResultado').textContent = '';
   $('btnOtroIntento').classList.add('oculto');
+  $('btnCerrar').classList.add('oculto');
   $('btnEnviar').classList.remove('oculto'); $('btnEnviar').disabled = false;
   window.scrollTo({top:0, behavior:'smooth'});
+});
+$('btnCerrar').addEventListener('click', () => {
+  window.close();
+  setTimeout(() => {
+    $('pantallaExamen').classList.add('oculto');
+    const fin = document.createElement('section');
+    fin.className = 'tarjeta';
+    fin.innerHTML = '<h2>Proceso completado</h2>' +
+      '<p style="font:15px Arial,sans-serif; color:#334155">Tu resultado ya quedó registrado en el acta oficial y el comprobante ' +
+      'fue enviado a tu correo. Puedes cerrar esta pestaña con seguridad: no queda nada pendiente por hacer aquí.</p>';
+    document.querySelector('main').appendChild(fin);
+    fin.scrollIntoView({behavior:'smooth', block:'center'});
+  }, 400);
 });
 if (!CONFIGURADO) {
   $('avisoConfig').classList.remove('oculto');
