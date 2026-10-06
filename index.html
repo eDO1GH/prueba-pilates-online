@@ -1,4 +1,11 @@
 
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Examen instructorado de Pilates Reformer- Campus — prueba en línea</title>
+<style>
   :root{
     --borde:#94a3b8; --texto:#111827; --punto:#dc2626; --tipo:#64748b;
     --pista:#2563eb; --linea:#cbd5e1; --fondo:#f1f5f9;
@@ -141,6 +148,13 @@
       <p class="hint">Puedes escribirlo con puntos, guion o sin ellos: se normaliza solo
       (para Chile, 99.999.999-9 queda como 99999999-9). Usa siempre el mismo: es tu identificador de intentos.</p></div>
     <div class="campo"><label for="fPais">País de origen</label><input id="fPais" autocomplete="country-name"></div>
+    <div class="campo" style="display:flex; gap:10px; align-items:flex-start">
+      <input id="fConsent" type="checkbox" style="width:20px; height:20px; margin-top:2px; flex:0 0 auto">
+      <label for="fConsent" style="font:13px/1.5 Arial,sans-serif; color:#334155; cursor:pointer">
+        Autorizo el tratamiento de estos datos para fines de evaluación y el envío de mi comprobante por correo.
+        La nota oficial es la registrada en el acta del curso; el correo es una cortesía informativa.
+      </label>
+    </div>
     <button type="button" id="btnComenzar">Comenzar la prueba</button>
     <p id="msgRegistro" style="font:13px Arial,sans-serif; color:#7f1d1d; min-height:18px; margin:10px 0 0"></p>
   </section>
@@ -2593,14 +2607,15 @@ function pantalllaExamen(){
 }
 $('btnComenzar').addEventListener('click', async () => {
   const btn = $('btnComenzar');
-  btn.disabled = true; btn.textContent = 'Consultando intentos disponibles…';
   const nombre = $('fNombre').value.trim(), correo = $('fCorreo').value.trim(),
         rut = $('fRut').value.trim(), pais = $('fPais').value.trim();
   const msg = $('msgRegistro');
   if (!nombre || !correo || !rut || !pais) { msg.textContent = 'Completa los cuatro campos para comenzar.'; return; }
+  if (!$('fConsent').checked) { msg.textContent = 'Para continuar debes autorizar el tratamiento de tus datos y el envío del comprobante.'; return; }
+  btn.disabled = true; btn.textContent = 'Consultando intentos disponibles…';
   if (!/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(correo)) { msg.textContent = 'Revisa el correo: el resultado se enviará ahí.'; return; }
   const rutN = normalizarRut(rut, pais);
-  alumno = {nombre, correo, rut: rutN, pais};
+  alumno = {nombre, correo, rut: rutN, pais, consentimiento: 'SI'};
   $('fRut').value = rutN;
   await consultarEstado(rutN);
   btn.disabled = false; btn.textContent = 'Comenzar la prueba';
@@ -2681,7 +2696,7 @@ $('btnEnviar').addEventListener('click', async () => {
         `<p style="margin:0 0 8px; font:800 18px Arial,sans-serif">¡Felicitaciones, ${escT(alumno.nombre)}!</p>` +
         `<p style="margin:0; font-weight:400">Has aprobado el <strong>examen</strong> con ` +
         `${res.correctas} de ${res.total} preguntas correctas (<strong>${res.puntaje}%</strong>) en tu intento ${res.intento}. ` +
-        `Tu nota quedó registrada oficialmente y en minutos recibirás el comprobante en <strong>${escT(alumno.correo)}.</strong></p>` +
+        `Tu nota quedó registrada oficialmente y el comprobante ${res.correo_estado === 'SI' ? 'fue enviado' : 'quedó pendiente de envío'} a <strong>${escT(alumno.correo)}.</strong></p>` +
         `<p style="margin:8px 0 0; font-weight:400">No necesitas rendir más intentos: con la aprobación tu proceso de evaluación queda cerrado. ` +
         `Gracias por el esfuerzo y la dedicación demostrada.</p>`;
       $('btnCerrar').classList.remove('oculto');
@@ -2700,7 +2715,7 @@ $('btnEnviar').addEventListener('click', async () => {
       panel.innerHTML =
         `<p style="margin:0 0 8px; font:800 18px Arial,sans-serif">Has completado tus 3 intentos, ${escT(alumno.nombre)}.</p>` +
         `<p style="margin:0; font-weight:400">Tu nota final oficial es el mejor de tus intentos: <strong>${res.mejor}%</strong>. ` +
-        `El resultado quedó registrado en el acta y recibirás el comprobante en <strong>${escT(alumno.correo)}.</strong> ` +
+        `El resultado quedó registrado en el acta y el comprobante ${res.correo_estado === 'SI' ? 'fue enviado' : 'quedó pendiente de envío'} a <strong>${escT(alumno.correo)}.</strong> ` +
         `Para consultas sobre tu evaluación, escribe a tu instructor o instructora indicando tu nombre y RUT/DNI.</p>`;
       $('btnCerrar').classList.remove('oculto');
     }
