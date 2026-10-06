@@ -1,4 +1,20 @@
 
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Examen instructorado de Pilates Reformer- Campus — prueba en línea</title>
+<style>
+  :root{
+    --borde:#94a3b8; --texto:#111827; --punto:#dc2626; --tipo:#64748b;
+    --pista:#2563eb; --linea:#cbd5e1; --fondo:#f1f5f9;
+    --ok:#16a34a; --mal:#dc2626;
+  }
+  *{box-sizing:border-box}
+  html,body{margin:0;padding:0}
+  body{font-family:Arial,Helvetica,sans-serif; line-height:1.45; background:var(--fondo); color:var(--texto)}
+  .topbar{
     position:sticky; top:0; z-index:50; background:#0f172a; color:#e2e8f0;
     padding:10px 16px; display:flex; gap:12px; flex-wrap:wrap;
     align-items:center; justify-content:center; font:700 14px Arial,sans-serif;
@@ -128,9 +144,9 @@
     <h2>Identificación del alumno</h2>
     <div class="campo"><label for="fNombre">Nombre y apellido</label><input id="fNombre" autocomplete="name"></div>
     <div class="campo"><label for="fCorreo">Correo personal (recibirás ahí tu resultado)</label><input id="fCorreo" type="email" autocomplete="email"></div>
-    <div class="campo"><label for="fRut">RUT / DNI</label><input id="fRut" placeholder="15.634.574-1 · 15634574-1 · 156345741">
+    <div class="campo"><label for="fRut">RUT / DNI</label><input id="fRut" placeholder="99.999.999-9 · 99999999-9 · 999999999">
       <p class="hint">Puedes escribirlo con puntos, guion o sin ellos: se normaliza solo
-      (para Chile queda como 15634574-1). Usa siempre el mismo: es tu identificador de intentos.</p></div>
+      (para Chile, 99.999.999-9 queda como 99999999-9). Usa siempre el mismo: es tu identificador de intentos.</p></div>
     <div class="campo"><label for="fPais">País de origen</label><input id="fPais" autocomplete="country-name"></div>
     <button type="button" id="btnComenzar">Comenzar la prueba</button>
     <p id="msgRegistro" style="font:13px Arial,sans-serif; color:#7f1d1d; min-height:18px; margin:10px 0 0"></p>
