@@ -68,6 +68,16 @@
     page-break-inside:avoid; break-inside:avoid;
   }
   fieldset.pregunta legend{padding:0 8px; font:700 12px Arial,sans-serif; color:var(--tipo)}
+  fieldset.pregunta.bien{border-color:var(--ok); border-width:2px}
+  fieldset.pregunta.mal{border-color:var(--mal); border-width:2px}
+  .opciones label.mal-elegida span{color:var(--mal); text-decoration:line-through}
+  .opciones label.mal-elegida span::after{content:" ✕"; text-decoration:none; font-weight:700}
+  .repaso{
+    margin-top:12px; padding:10px 14px; background:#fffbeb; border:1px solid #f59e0b;
+    border-radius:8px; font:13px Arial,sans-serif; color:#78350f; display:none;
+  }
+  .repaso.visible{display:block}
+  .repaso .fuente{display:block; margin-top:4px; font:italic 12.5px Arial,sans-serif; color:#92400e; overflow-wrap:anywhere}
   fieldset.pregunta.sin-responder{outline:2.5px solid #f59e0b; outline-offset:2px}
   .cabecera{display:flex; justify-content:space-between; align-items:flex-start; gap:16px}
   .enunciado{flex:1 1 auto; min-width:0; margin:0; font:700 16px Arial,sans-serif; color:var(--texto); overflow-wrap:anywhere}
@@ -161,6 +171,7 @@
         <label for="p1-b"><input type="radio" id="p1-b" name="p1" value="b"><span>b) 1780.  Rusia</span></label>
         <label for="p1-c"><input type="radio" id="p1-c" name="p1" value="c"><span>c) 1980.  Suecia</span></label>
       </div>
+      <div class="repaso" id="rep-1" aria-live="polite"></div>
     </fieldset>
 
     <fieldset class="pregunta" id="fs-2">
@@ -175,6 +186,7 @@
         <label for="p2-b"><input type="radio" id="p2-b" name="p2" value="b"><span>b) Un método de entrenamiento</span></label>
         <label for="p2-c"><input type="radio" id="p2-c" name="p2" value="c"><span>c) Un conjunto de 36 movimientos</span></label>
       </div>
+      <div class="repaso" id="rep-2" aria-live="polite"></div>
     </fieldset>
 
     <fieldset class="pregunta" id="fs-3">
@@ -189,6 +201,7 @@
         <label for="p3-b"><input type="radio" id="p3-b" name="p3" value="b"><span>b) Contrology</span></label>
         <label for="p3-c"><input type="radio" id="p3-c" name="p3" value="c"><span>c) Centralización</span></label>
       </div>
+      <div class="repaso" id="rep-3" aria-live="polite"></div>
     </fieldset>
 
     <fieldset class="pregunta" id="fs-4">
@@ -203,6 +216,7 @@
         <label for="p4-b"><input type="radio" id="p4-b" name="p4" value="b"><span>b) Mansión del poder</span></label>
         <label for="p4-c"><input type="radio" id="p4-c" name="p4" value="c"><span>c) Centro</span></label>
       </div>
+      <div class="repaso" id="rep-4" aria-live="polite"></div>
     </fieldset>
 
     <fieldset class="pregunta" id="fs-5">
@@ -219,6 +233,7 @@
         <label for="p5-d"><input type="checkbox" id="p5-d" name="p5[]" value="d"><span>d) Respiración</span></label>
         <label for="p5-e"><input type="checkbox" id="p5-e" name="p5[]" value="e"><span>e) Fluides</span></label>
       </div>
+      <div class="repaso" id="rep-5" aria-live="polite"></div>
     </fieldset>
 
     <fieldset class="pregunta" id="fs-6">
@@ -234,6 +249,7 @@
         <label for="p6-c"><input type="radio" id="p6-c" name="p6" value="c"><span>c) Control.</span></label>
         <label for="p6-d"><input type="radio" id="p6-d" name="p6" value="d"><span>d) Respiración</span></label>
       </div>
+      <div class="repaso" id="rep-6" aria-live="polite"></div>
     </fieldset>
 
     <fieldset class="pregunta" id="fs-7">
@@ -247,6 +263,7 @@
         <label for="p7-a"><input type="radio" id="p7-a" name="p7" value="a"><span>Sí</span></label>
         <label for="p7-b"><input type="radio" id="p7-b" name="p7" value="b"><span>No</span></label>
       </div>
+      <div class="repaso" id="rep-7" aria-live="polite"></div>
     </fieldset>
 
     <fieldset class="pregunta" id="fs-9">
@@ -262,6 +279,7 @@
         <label for="p9-c"><input type="checkbox" id="p9-c" name="p9[]" value="c"><span>c) Al exhalar, se realiza una contracción del transverso abdominal.</span></label>
         <label for="p9-d"><input type="checkbox" id="p9-d" name="p9[]" value="d"><span>d) Al exhalar, las costillas se acercan hacia el centro del cuerpo, disminuyendo el diámetro torácico.</span></label>
       </div>
+      <div class="repaso" id="rep-9" aria-live="polite"></div>
     </fieldset>
 
     <fieldset class="pregunta" id="fs-9-bis">
@@ -275,6 +293,7 @@
         <label for="p9-bis-a"><input type="radio" id="p9-bis-a" name="p9-bis" value="a"><span>Verdadero</span></label>
         <label for="p9-bis-b"><input type="radio" id="p9-bis-b" name="p9-bis" value="b"><span>Falso</span></label>
       </div>
+      <div class="repaso" id="rep-9-bis" aria-live="polite"></div>
     </fieldset>
 
     <fieldset class="pregunta" id="fs-10">
@@ -291,6 +310,7 @@
         <label for="p10-d"><input type="checkbox" id="p10-d" name="p10[]" value="d"><span>d) Abducción.</span></label>
         <label for="p10-e"><input type="checkbox" id="p10-e" name="p10[]" value="e"><span>e) Extensión.</span></label>
       </div>
+      <div class="repaso" id="rep-10" aria-live="polite"></div>
     </fieldset>
 
     <fieldset class="pregunta" id="fs-11">
@@ -306,6 +326,7 @@
         <label for="p11-c"><input type="radio" id="p11-c" name="p11" value="c"><span>c) Flexión lumbar completa.</span></label>
         <label for="p11-d"><input type="radio" id="p11-d" name="p11" value="d"><span>d) Hiperextensión de la columna</span></label>
       </div>
+      <div class="repaso" id="rep-11" aria-live="polite"></div>
     </fieldset>
 
     <fieldset class="pregunta" id="fs-12">
@@ -319,6 +340,7 @@
         <label for="p12-a"><input type="radio" id="p12-a" name="p12" value="a"><span>Si</span></label>
         <label for="p12-b"><input type="radio" id="p12-b" name="p12" value="b"><span>No</span></label>
       </div>
+      <div class="repaso" id="rep-12" aria-live="polite"></div>
     </fieldset>
 
     <fieldset class="pregunta" id="fs-13">
@@ -332,6 +354,7 @@
         <label for="p13-a"><input type="radio" id="p13-a" name="p13" value="a"><span>Verdadero</span></label>
         <label for="p13-b"><input type="radio" id="p13-b" name="p13" value="b"><span>Falso</span></label>
       </div>
+      <div class="repaso" id="rep-13" aria-live="polite"></div>
     </fieldset>
 
     <fieldset class="pregunta" id="fs-14">
@@ -345,6 +368,7 @@
         <label for="p14-a"><input type="radio" id="p14-a" name="p14" value="a"><span>Verdadero</span></label>
         <label for="p14-b"><input type="radio" id="p14-b" name="p14" value="b"><span>Falso</span></label>
       </div>
+      <div class="repaso" id="rep-14" aria-live="polite"></div>
     </fieldset>
 
     <fieldset class="pregunta" id="fs-15">
@@ -360,6 +384,7 @@
         <label for="p15-c"><input type="radio" id="p15-c" name="p15" value="c"><span>c) Análisis de las necesidades.</span></label>
         <label for="p15-d"><input type="radio" id="p15-d" name="p15" value="d"><span>d) Orden de los ejercicios.</span></label>
       </div>
+      <div class="repaso" id="rep-15" aria-live="polite"></div>
     </fieldset>
 
     <fieldset class="pregunta" id="fs-16">
@@ -375,6 +400,7 @@
         <label for="p16-c"><input type="checkbox" id="p16-c" name="p16[]" value="c"><span>c) Rigidez de la columna.</span></label>
         <label for="p16-d"><input type="checkbox" id="p16-d" name="p16[]" value="d"><span>d) Estabilidad lumbo-pélvica.</span></label>
       </div>
+      <div class="repaso" id="rep-16" aria-live="polite"></div>
     </fieldset>
 
     <fieldset class="pregunta" id="fs-17">
@@ -390,6 +416,7 @@
         <label for="p17-c"><input type="radio" id="p17-c" name="p17" value="c"><span>c) El proceso pedagógico por el cual, a través de correlativas adaptaciones, se conduce a la persona a la mejora de su condición física o rendimiento deportivo.</span></label>
         <label for="p17-d"><input type="radio" id="p17-d" name="p17" value="d"><span>d) Un conjunto de cosas sucesivas de un fenómeno natural o una operación artificial.</span></label>
       </div>
+      <div class="repaso" id="rep-17" aria-live="polite"></div>
     </fieldset>
 
     <fieldset class="pregunta" id="fs-18">
@@ -406,6 +433,7 @@
         <label for="p18-d"><input type="radio" id="p18-d" name="p18" value="d"><span>d) Todas</span></label>
         <label for="p18-e"><input type="radio" id="p18-e" name="p18" value="e"><span>e) Ninguna</span></label>
       </div>
+      <div class="repaso" id="rep-18" aria-live="polite"></div>
     </fieldset>
 
     <fieldset class="pregunta" id="fs-19">
@@ -422,6 +450,7 @@
         <label for="p19-d"><input type="radio" id="p19-d" name="p19" value="d"><span>d) Alivio del dolor de espalda.</span></label>
         <label for="p19-e"><input type="radio" id="p19-e" name="p19" value="e"><span>e) Todas son correctas</span></label>
       </div>
+      <div class="repaso" id="rep-19" aria-live="polite"></div>
     </fieldset>
 
     <fieldset class="pregunta" id="fs-20">
@@ -437,6 +466,7 @@
         <label for="p20-c"><input type="radio" id="p20-c" name="p20" value="c"><span>c) Flexión</span></label>
         <label for="p20-d"><input type="radio" id="p20-d" name="p20" value="d"><span>d) Rotación</span></label>
       </div>
+      <div class="repaso" id="rep-20" aria-live="polite"></div>
     </fieldset>
 
     <fieldset class="pregunta" id="fs-21">
@@ -452,6 +482,7 @@
         <label for="p21-c"><input type="radio" id="p21-c" name="p21" value="c"><span>c) Recto ant. Mayor de la cabeza</span></label>
         <label for="p21-d"><input type="radio" id="p21-d" name="p21" value="d"><span>d) Complexo mayor y menor</span></label>
       </div>
+      <div class="repaso" id="rep-21" aria-live="polite"></div>
     </fieldset>
 
     <fieldset class="pregunta" id="fs-22">
@@ -467,6 +498,7 @@
         <label for="p22-c"><input type="checkbox" id="p22-c" name="p22[]" value="c"><span>c) Biceps</span></label>
         <label for="p22-d"><input type="checkbox" id="p22-d" name="p22[]" value="d"><span>d) Redondo menor</span></label>
       </div>
+      <div class="repaso" id="rep-22" aria-live="polite"></div>
     </fieldset>
 
     <fieldset class="pregunta" id="fs-23">
@@ -482,6 +514,7 @@
         <label for="p23-c"><input type="radio" id="p23-c" name="p23" value="c"><span>c) Semitendisoso</span></label>
         <label for="p23-d"><input type="radio" id="p23-d" name="p23" value="d"><span>d) Gemelo.</span></label>
       </div>
+      <div class="repaso" id="rep-23" aria-live="polite"></div>
     </fieldset>
 
     <fieldset class="pregunta" id="fs-24">
@@ -497,6 +530,7 @@
         <label for="p24-c"><input type="radio" id="p24-c" name="p24" value="c"><span>c) Cuadriceps</span></label>
         <label for="p24-d"><input type="radio" id="p24-d" name="p24" value="d"><span>d) Soleo</span></label>
       </div>
+      <div class="repaso" id="rep-24" aria-live="polite"></div>
     </fieldset>
 
     <fieldset class="pregunta" id="fs-25">
@@ -512,6 +546,7 @@
         <label for="p25-c"><input type="radio" id="p25-c" name="p25" value="c"><span>c) Un conjunto de músculos y tejidos conectivos que trabajan en sinergia para realizar movimientos específicos.</span></label>
         <label for="p25-d"><input type="radio" id="p25-d" name="p25" value="d"><span>d) Tendones y ligamentos que unen los músculos a los huesos.</span></label>
       </div>
+      <div class="repaso" id="rep-25" aria-live="polite"></div>
     </fieldset>
 
     <fieldset class="pregunta" id="fs-26">
@@ -525,6 +560,7 @@
         <label for="p26-a"><input type="radio" id="p26-a" name="p26" value="a"><span>Verdadero</span></label>
         <label for="p26-b"><input type="radio" id="p26-b" name="p26" value="b"><span>Falso</span></label>
       </div>
+      <div class="repaso" id="rep-26" aria-live="polite"></div>
     </fieldset>
       <div class="acciones">
         <button type="button" id="btnEnviar">Enviar respuestas</button>
@@ -2624,6 +2660,28 @@ $('btnEnviar').addEventListener('click', async () => {
     await consultarEstado(alumno.rut);
     document.querySelectorAll('#testForm input').forEach(i => i.disabled = true);
     $('btnEnviar').classList.add('oculto');
+
+    let marcadas = 0;
+    for (const q of TEST.preguntas){
+      const sels = Array.from(document.querySelectorAll(
+        `[name="p${q.id}"]:checked, [name="p${q.id}[]"]:checked`)).map(i => i.value);
+      const ok = sels.length === q.respuesta.length && q.respuesta.every(r => sels.includes(r));
+      const fs = document.getElementById('fs-' + q.id);
+      fs.classList.remove('bien','mal');
+      fs.classList.add(ok ? 'bien' : 'mal');
+      const rep = document.getElementById('rep-' + q.id);
+      rep.classList.remove('visible'); rep.innerHTML = '';
+      document.querySelectorAll(`[name="p${q.id}"], [name="p${q.id}[]"]`).forEach(inp => {
+        inp.closest('label').classList.remove('mal-elegida');
+        if (!ok && inp.checked){ inp.closest('label').classList.add('mal-elegida'); }
+      });
+      if (!ok){
+        marcadas++;
+        rep.innerHTML = `<span>Respuesta no correcta. Revisa la fuente y vuelve a intentarlo en tu próximo intento.</span>` +
+          `<span class="fuente">Fuente para repasar: ${escT(q.fuente)} · página ${escT(q.pagina)} (sin cita: la respuesta no se revela)</span>`;
+        rep.classList.add('visible');
+      }
+    }
     if (res.aprobado) {
       panel.className = 'aprobado';
       panel.innerHTML =
@@ -2639,8 +2697,10 @@ $('btnEnviar').addEventListener('click', async () => {
       panel.innerHTML =
         `<p style="margin:0 0 8px; font:800 18px Arial,sans-serif">Gracias por completar tu intento, ${escT(alumno.nombre)}.</p>` +
         `<p style="margin:0; font-weight:400">Obtuviste <strong>${res.correctas} de ${res.total}</strong> (${res.puntaje}%) y se aprueba con el 100%. ` +
-        `Te ${res.restantes === 1 ? 'queda' : 'quedan'} <strong>${res.restantes}</strong> ${res.restantes === 1 ? 'intento' : 'intentos'}: repasa con calma las fuentes citadas en cada pregunta y vuelve cuando te sientas listo o lista. ` +
-        `Tu nota final será la del mejor intento, así que este resultado no te perjudica.</p>`;
+        `Te ${res.restantes === 1 ? 'queda' : 'quedan'} <strong>${res.restantes}</strong> ${res.restantes === 1 ? 'intento' : 'intentos'}: ` +
+        `dejé marcadas con ✕ tus ${marcadas} ${marcadas === 1 ? 'respuesta no correcta' : 'respuestas no correctas'} y, al pie de cada una, la fuente y la página donde repasar ` +
+        `(sin revelar la respuesta, para que el próximo intento sea mérito tuyo). Vuelve cuando te sientas listo o lista: ` +
+        `tu nota final será la del mejor intento, así que este resultado no te perjudica.</p>`;
       $('btnOtroIntento').classList.remove('oculto');
     } else {
       panel.className = 'reprobado';
@@ -2660,6 +2720,9 @@ $('btnEnviar').addEventListener('click', async () => {
 });
 $('btnOtroIntento').addEventListener('click', () => {
   document.querySelectorAll('#testForm input').forEach(i => { i.checked = false; i.disabled = false; });
+  document.querySelectorAll('fieldset.pregunta').forEach(f => f.classList.remove('bien','mal'));
+  document.querySelectorAll('.opciones label.mal-elegida').forEach(l => l.classList.remove('mal-elegida'));
+  document.querySelectorAll('.repaso').forEach(r => { r.classList.remove('visible'); r.innerHTML = ''; });
   document.querySelectorAll('fieldset.sin-responder').forEach(f => f.classList.remove('sin-responder'));
   $('panelResultado').className = ''; $('panelResultado').textContent = '';
   $('btnOtroIntento').classList.add('oculto');
