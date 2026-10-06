@@ -1,5 +1,12 @@
 
-<!
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Examen instructorado de Pilates Reformer- Campus — prueba en línea</title>
+<style>
+  :root{
     --borde:#94a3b8; --texto:#111827; --punto:#dc2626; --tipo:#64748b;
     --pista:#2563eb; --linea:#cbd5e1; --fondo:#f1f5f9;
     --ok:#16a34a; --mal:#dc2626;
@@ -148,6 +155,9 @@
         La nota oficial es la registrada en el acta del curso; el correo es una cortesía informativa.
       </label>
     </div>
+    <p class="hint" style="margin:0 0 10px">La primera entrada del día puede tardar hasta 30 segundos porque el servidor
+    despierta en ese momento; esta página lo precalienta al abrirse, así que al terminar de escribir tus datos
+    ya debería estar listo.</p>
     <button type="button" id="btnComenzar">Comenzar la prueba</button>
     <p id="msgRegistro" style="font:13px Arial,sans-serif; color:#7f1d1d; min-height:18px; margin:10px 0 0"></p>
   </section>
@@ -2593,6 +2603,79 @@ async function consultarEstado(rut){
     estado = await r.json(); chip();
   } catch (e) { estado = {intentos_usados:0, restantes:3, mejor:null, error:true}; chip(); }
 }
+/* ===== ENVÍO ROBUSTO (regresión R26) =====
+   El servidor de Apps Script puede tardar decenas de segundos en responder y a veces
+   la conexión se corta JUSTO cuando devolvía el resultado (el intento queda registrado
+   y el correo sale, pero el navegador no recibe nada). Por eso:
+   1) timeout generoso con AbortController (no abortar antes de tiempo);
+   2) si no llega respuesta usable, NUNCA se afirma "no se consumió": se consulta el
+      acta (?accion=estado) y se compara contra los intentos que había antes de enviar;
+   3) solo si el acta confirma que NO hay registro nuevo se reintenta una vez;
+   4) si el acta confirma que SÍ hay registro, se reconstruye el resultado con la misma
+      clave incrustada y se muestra como oficial, avisando que la respuesta se perdió. */
+const MS_TIMEOUT_ENVIO = 75000;
+function nuevoIdIntento(){
+  // Clave de idempotencia (R28): identifica ESTE envío ante el servidor para que un
+  // reintento automático del navegador no consuma un segundo intento.
+  try { if (crypto && crypto.randomUUID) return crypto.randomUUID(); } catch (e) {}
+  return 'i-' + Date.now() + '-' + Math.floor(Math.random() * 1e9);
+}
+function fetchConTimeout(url, opts, ms){
+  const ctrl = new AbortController();
+  const t = setTimeout(() => ctrl.abort(), ms || MS_TIMEOUT_ENVIO);
+  return fetch(url, Object.assign({}, opts || {}, {signal: ctrl.signal}))
+    .finally(() => clearTimeout(t));
+}
+async function verificarRegistro(rut, usadosBase){
+  for (let i = 0; i < 2; i++){
+    try {
+      const r = await fetchConTimeout(URL_BACKEND + '?accion=estado&rut=' + encodeURIComponent(rut), null, 20000);
+      const st = await r.json();
+      if (st && st.ok){ estado = st; chip(); return {verificado:true, consumido: st.intentos_usados > usadosBase, estado: st}; }
+    } catch (e) {}
+  }
+  return {verificado:false, consumido:false, estado:null};
+}
+function resultadoLocal(respuestas){
+  let correctas = 0;
+  TEST.preguntas.forEach(q => {
+    const sels = respuestas[q.id] || [];
+    if (sels.length === q.respuesta.length && q.respuesta.every(x => sels.includes(x))) correctas++;
+  });
+  const total = TEST.preguntas.length;
+  let aprobado = correctas === total;
+  TEST.preguntas.forEach(q => {
+    const sels = respuestas[q.id] || [];
+    const ok = sels.length === q.respuesta.length && q.respuesta.every(x => sels.includes(x));
+    if (q.obligatoria && !ok) aprobado = false;
+  });
+  return {correctas: correctas, total: total, puntaje: Math.round(correctas / total * 100), aprobado: aprobado};
+}
+async function envioRobusto(body, rut, usadosBase, respuestas){
+  let ultimaV = null;
+  for (let vuelta = 0; vuelta < 2; vuelta++){
+    try {
+      const r = await fetchConTimeout(URL_BACKEND, {
+        method: 'POST',
+        headers: {'Content-Type': 'text/plain;charset=utf-8'},
+        body: body
+      });
+      const res = await r.json();
+      if (res && res.ok) return {tipo:'ok', res: res};
+      if (res) return {tipo:'rechazo', res: res};
+    } catch (e) { /* corte de red o timeout: verificar antes de decir cualquier cosa */ }
+    ultimaV = await verificarRegistro(rut, usadosBase);
+    if (ultimaV.consumido){
+      const local = resultadoLocal(respuestas);
+      return {tipo:'recuperado', res: {ok:true, intento: ultimaV.estado.intentos_usados,
+        correctas: local.correctas, total: local.total, puntaje: local.puntaje, aprobado: local.aprobado,
+        restantes: ultimaV.estado.restantes, mejor: ultimaV.estado.mejor, correo_estado: 'SI'}};
+    }
+    if (!ultimaV.verificado) return {tipo:'inconfirmable'};
+    // Verificado y SIN registro nuevo: reintentar es seguro (sigue en la próxima vuelta).
+  }
+  return {tipo:'no_consumido', estado: ultimaV.estado};
+}
 function pantalllaExamen(){
   $('pantallaRegistro').classList.add('oculto');
   $('pantallaExamen').classList.remove('oculto');
@@ -2642,25 +2725,41 @@ $('btnEnviar').addEventListener('click', async () => {
     panel.textContent = 'Backend no configurado: pega la URL de Apps Script en CONFIG.APPS_SCRIPT_URL (paso humano del README-DESPLEGUE). Sin backend no se registra el intento.';
     return;
   }
-  $('btnEnviar').disabled = true;
-  try {
-    const r = await fetch(URL_BACKEND, {
-      method: 'POST',
-      headers: {'Content-Type': 'text/plain;charset=utf-8'},
-      body: JSON.stringify({accion:'registrar', test_id: CONFIG.TEST_ID, alumno, respuestas})
-    });
-    const res = await r.json();
-    if (!res.ok) {
-      panel.className = 'bloqueado';
-      panel.textContent = res.error === 'intentos agotados'
-        ? 'Ya usaste los 3 intentos. Tu nota final es el mejor intento registrado.'
-        : 'El servidor rechazó el envío: ' + res.error + '. No se consumió tu intento.';
-      $('btnEnviar').disabled = false;
-      return;
-    }
+  const usadosBase = estado.intentos_usados;
+  const btn = $('btnEnviar');
+  btn.disabled = true;
+  btn.textContent = 'Enviando tu intento… el servidor puede tardar hasta un minuto';
+  const body = JSON.stringify({accion:'registrar', test_id: CONFIG.TEST_ID, alumno, respuestas, id_intento: nuevoIdIntento()});
+  const salida = await envioRobusto(body, alumno.rut, usadosBase, respuestas);
+  if (salida.tipo === 'rechazo') {
+    panel.className = 'bloqueado';
+    panel.textContent = salida.res.error === 'intentos agotados'
+      ? 'Ya usaste los 3 intentos. Tu nota final es el mejor intento registrado.'
+      : 'El servidor rechazó el envío: ' + salida.res.error + '. No se consumió tu intento.';
+    btn.disabled = false; btn.textContent = 'Enviar respuestas';
+    return;
+  }
+  if (salida.tipo === 'no_consumido') {
+    panel.className = 'bloqueado';
+    panel.textContent = 'Comprobamos con el servidor y tu intento no quedó registrado ' +
+      `(llevas ${salida.estado.intentos_usados} de 3 usados): el envío no alcanzó a llegar al acta. ` +
+      'Tus respuestas siguen marcadas aquí; cuando tengas conexión estable, vuelve a presionar «Enviar respuestas».';
+    btn.disabled = false; btn.textContent = 'Enviar respuestas';
+    return;
+  }
+  if (salida.tipo === 'inconfirmable') {
+    panel.className = 'bloqueado';
+    panel.textContent = 'Se perdió la conexión con el servidor y no pudimos confirmar si tu intento quedó registrado. ' +
+      'No vuelvas a enviarlo de inmediato: espera el comprobante por correo o vuelve a entrar con tus datos en 2 o 3 minutos ' +
+      'para consultar tus intentos. Si los intentos no subieron y no llega el correo, puedes reenviar con seguridad.';
+    btn.disabled = false; btn.textContent = 'Enviar respuestas';
+    return;
+  }
+  {
+    const res = salida.res;
     await consultarEstado(alumno.rut);
     document.querySelectorAll('#testForm input').forEach(i => i.disabled = true);
-    $('btnEnviar').classList.add('oculto');
+    btn.classList.add('oculto');
 
     let marcadas = 0;
     for (const q of TEST.preguntas){
@@ -2683,9 +2782,13 @@ $('btnEnviar').addEventListener('click', async () => {
         rep.classList.add('visible');
       }
     }
+    const notaRecuperado = salida.tipo === 'recuperado'
+      ? '<p style="margin:0 0 8px; font:400 13px Arial,sans-serif">Se cortó la conexión justo cuando el servidor devolvía tu resultado. ' +
+        'Comprobamos directamente en el acta: tu intento quedó registrado correctamente y lo que ves abajo es oficial.</p>'
+      : '';
     if (res.aprobado) {
       panel.className = 'aprobado';
-      panel.innerHTML =
+      panel.innerHTML = notaRecuperado +
         `<p style="margin:0 0 8px; font:800 18px Arial,sans-serif">¡Felicitaciones, ${escT(alumno.nombre)}!</p>` +
         `<p style="margin:0; font-weight:400">Has aprobado el <strong>examen</strong> con ` +
         `${res.correctas} de ${res.total} preguntas correctas (<strong>${res.puntaje}%</strong>) en tu intento ${res.intento}. ` +
@@ -2695,7 +2798,7 @@ $('btnEnviar').addEventListener('click', async () => {
       $('btnCerrar').classList.remove('oculto');
     } else if (res.restantes > 0) {
       panel.className = 'reprobado';
-      panel.innerHTML =
+      panel.innerHTML = notaRecuperado +
         `<p style="margin:0 0 8px; font:800 18px Arial,sans-serif">Gracias por completar tu intento, ${escT(alumno.nombre)}.</p>` +
         `<p style="margin:0; font-weight:400">Obtuviste <strong>${res.correctas} de ${res.total}</strong> (${res.puntaje}%) y se aprueba con el 100%. ` +
         `Te ${res.restantes === 1 ? 'queda' : 'quedan'} <strong>${res.restantes}</strong> ${res.restantes === 1 ? 'intento' : 'intentos'}: ` +
@@ -2705,7 +2808,7 @@ $('btnEnviar').addEventListener('click', async () => {
       $('btnOtroIntento').classList.remove('oculto');
     } else {
       panel.className = 'reprobado';
-      panel.innerHTML =
+      panel.innerHTML = notaRecuperado +
         `<p style="margin:0 0 8px; font:800 18px Arial,sans-serif">Has completado tus 3 intentos, ${escT(alumno.nombre)}.</p>` +
         `<p style="margin:0; font-weight:400">Tu nota final oficial es el mejor de tus intentos: <strong>${res.mejor}%</strong>. ` +
         `El resultado quedó registrado en el acta y el comprobante ${res.correo_estado === 'SI' ? 'fue enviado' : 'quedó pendiente de envío'} a <strong>${escT(alumno.correo)}.</strong> ` +
@@ -2713,10 +2816,6 @@ $('btnEnviar').addEventListener('click', async () => {
       $('btnCerrar').classList.remove('oculto');
     }
     panel.scrollIntoView({behavior:'smooth', block:'center'});
-  } catch (e) {
-    panel.className = 'bloqueado';
-    panel.textContent = 'No hubo conexión con el servidor de resultados. Tu intento NO se consumió: vuelve a enviar cuando recuperes conexión.';
-    $('btnEnviar').disabled = false;
   }
 });
 $('btnOtroIntento').addEventListener('click', () => {
@@ -2749,6 +2848,10 @@ if (!CONFIGURADO) {
   $('chipIntentos').textContent = 'Intentos: backend sin configurar';
 } else {
   chip();
+  // Precalentamiento (regresión R27): el servidor de Apps Script tarda hasta ~30 s en
+  // despertar la primera vez. Al abrir esta página se envía un GET liviano que lo
+  // despierta mientras el alumno escribe sus datos: la entrada deja de sentirse lenta.
+  fetch(URL_BACKEND + '?accion=despertar', {keepalive:true}).catch(() => {});
 }
 </script>
 </body>
