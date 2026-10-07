@@ -1,4 +1,14 @@
-1f5f9;
+
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Examen instructorado de Pilates Reformer- Campus — prueba en línea</title>
+<style>
+  :root{
+    --borde:#94a3b8; --texto:#111827; --punto:#dc2626; --tipo:#64748b;
+    --pista:#2563eb; --linea:#cbd5e1; --fondo:#f1f5f9;
     --ok:#16a34a; --mal:#dc2626;
   }
   *{box-sizing:border-box}
@@ -2583,6 +2593,10 @@ let alumno = null;
 let estado = {intentos_usados:0, restantes:3, mejor:null};
 
 function chip(){
+  if (estado.aprobo || estado.proceso_cerrado){
+    $('chipIntentos').textContent = 'Proceso cerrado por aprobación · nota final: ' + (estado.mejor != null ? estado.mejor + '%' : '—');
+    return;
+  }
   $('chipIntentos').textContent = `Intentos usados: ${estado.intentos_usados} de 3 · restantes: ${estado.restantes}` +
     (estado.mejor != null ? ` · mejor nota: ${estado.mejor}%` : '');
 }
@@ -2685,6 +2699,10 @@ $('btnComenzar').addEventListener('click', async () => {
   $('fRut').value = rutN;
   await consultarEstado(rutN);
   btn.disabled = false; btn.textContent = 'Comenzar la prueba';
+  if (estado.aprobo || estado.proceso_cerrado) {
+    msg.textContent = 'Tu proceso de evaluación quedó CERRADO con tu aprobación (nota final: ' + (estado.mejor != null ? estado.mejor + '%' : 'aprobado') + '). No necesitas rendir más intentos. Si crees que hay un error, escribe al docente.';
+    return;
+  }
   if (estado.restantes <= 0) {
     msg.textContent = 'Este RUT/DNI ya agotó los 3 intentos. Tu nota final es el mejor intento: ' + estado.mejor + '%.';
     return;
@@ -2725,7 +2743,9 @@ $('btnEnviar').addEventListener('click', async () => {
     panel.className = 'bloqueado';
     panel.textContent = salida.res.error === 'intentos agotados'
       ? 'Ya usaste los 3 intentos. Tu nota final es el mejor intento registrado.'
-      : 'El servidor rechazó el envío: ' + salida.res.error + '. No se consumió tu intento.';
+      : (salida.res.error === 'proceso_cerrado_por_aprobacion'
+          ? 'Tu proceso ya estaba CERRADO por una aprobación registrada en el acta. Este intento no se registró ni consumió.'
+          : 'El servidor rechazó el envío: ' + salida.res.error + '. No se consumió tu intento.');
     btn.disabled = false; btn.textContent = 'Enviar respuestas';
     return;
   }
