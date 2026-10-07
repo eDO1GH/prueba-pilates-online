@@ -1,4 +1,16 @@
 
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Examen instructorado de Pilates Reformer - Campus Virtual — portal del alumno</title>
+<style>
+  :root{
+    --borde:#94a3b8; --texto:#111827; --punto:#dc2626; --tipo:#64748b;
+    --pista:#2563eb; --linea:#cbd5e1; --fondo:#f1f5f9;
+    --ok:#16a34a; --mal:#dc2626;
+  }
   *{box-sizing:border-box}
   html,body{margin:0;padding:0}
   body{font-family:Arial,Helvetica,sans-serif; line-height:1.45; background:var(--fondo); color:var(--texto)}
@@ -2882,7 +2894,8 @@ function chipOficial(){
 /* R32: adaptadores de la capa de red compartida (JS_RED). El estado oficial vive
    en esta página; la capa de red lo lee y lo escribe por estas dos funciones. */
 function obtenerEstado(){ return estadoOficial; }
-function fijarEstado(st){ estadoOficial = st; chipOficial(); }
+function fijarEstado(st){ estadoOficial = st; sincronizarFuenteCerrojo(st); chipOficial(); repintarCerrojo(); }
+function fijarEstadoSilencioso(st){ estadoOficial = st; sincronizarFuenteCerrojo(st); chipOficial(); }
 
 /* ===== CAPA DE RED COMPARTIDA (R32) =====
    UNA sola fuente de verdad: build_html_online.py define este bloque y
@@ -2892,7 +2905,10 @@ function fijarEstado(st){ estadoOficial = st; chipOficial(); }
 
    Adaptadores que cada página define ANTES de este bloque:
      obtenerEstado() -> devuelve el objeto de estado de intentos actual
-     fijarEstado(st) -> lo guarda y repinta el chip
+     fijarEstado(st) -> lo guarda, repinta el chip y repinta el cerrojo R33
+     fijarEstadoSilencioso(st) -> lo guarda y repinta el chip SIN repintar el
+       cerrojo (refrescos durante un envío en curso: R33, para no rebotar el
+       examen mientras la recuperación todavía no pintó su panel)
 
    Presupuestos de tiempo (R32). El piso de latencia lo pone el cold start de
    Apps Script, medido en producción con sondas de solo lectura: 5-19 s en frío
@@ -2960,7 +2976,10 @@ async function sondearActa(rut, usadosBase, maxSondeos, msTimeout, onProgreso, m
       const r = await fetchConTimeout(URL_BACKEND + '?accion=estado&rut=' + encodeURIComponent(rut), null, msTimeout || MS_SONDEO_ACTA);
       const st = await r.json();
       if (st && st.ok){
-        verificado = true; ultimo = st; fijarEstado(st);
+        /* R33: refresco SILENCIOSO durante el envío: sincroniza fuente y chip,
+           pero NO repinta el cerrojo (el panel de resultado todavía no existe y
+           un rebote aquí escondería la recuperación que está en curso). */
+        verificado = true; ultimo = st; fijarEstadoSilencioso(st);
         if (st.intentos_usados > usadosBase) return {verificado:true, consumido:true, estado:st};
       }
     } catch (e) {}
@@ -3045,6 +3064,139 @@ async function envioRobusto(body, rut, usadosBase, respuestas, onProgreso){
   }
   return {tipo:'no_consumido', estado: ultimaV ? ultimaV.estado : obtenerEstado()};
 }
+/* ===== R33: CERROJO DE ENTRADA OFICIAL (doble consulta + caché de sesión) =====
+   Defecto real que corrige (regresión R33, detectada en producción): la entrada
+   optimista de R32(a) dejaba el botón oficial habilitado mientras el acta venía
+   en camino, así un alumno con el proceso YA cerrado alcanzaba a entrar unos
+   segundos al panel oficial antes del rebote. Contrato aprobado por el docente:
+     1. La verificación arranca al confirmarse la identidad (chip del correo), no
+        al mostrar la pantalla de modos/examen: el tiempo humano de lectura queda
+        solapado con la respuesta del servidor (no se pierde velocidad).
+     2. DOBLE consulta en paralelo al acta: la primera respuesta pinta la
+        interfaz y la segunda la cruza; si discordan, manda la más restrictiva
+        (cerrado/agotado pesa más que abierto).
+     3. Mientras verifica, el botón oficial NO se puede apretar («Verificando
+        tus intentos oficiales…»); solo se habilita con el acta abierta.
+     4. Caché de sesión por RUT: al recargar o reentrar, el cerrojo se pinta al
+        instante (0 pedidos) y se revalida en segundo plano.
+     5. Si AMBAS consultas fallan (sin red), se mantiene el comportamiento R32:
+        se permite entrar y el servidor valida al enviar, sin consumir intento.
+   El acta sigue siendo la única fuente de verdad: esto es UX y defensa en
+   profundidad; el backend vuelve a validar todo al recibir el envío. */
+let cerrojoFuente = 'desconocido';   // 'verificando'|'abierto'|'cerrado'|'agotado'|'sin_red'
+let cerrojoRut = null;
+let cerrojoEnCurso = null;
+let cerrojoEsperas = [];
+let ultimaOkCerrojo = 0;
+const PREFIJO_CACHE_R33 = 'r33_estado_';
+const MS_REVALIDA_R33 = msOverride('msRevalida', 60000);
+const PESO_FUENTE_R33 = {desconocido:0, verificando:0, sin_red:0, abierto:1, agotado:2, cerrado:3};
+function fuenteDeEstado(st){
+  if (!st) return 'desconocido';
+  if (st.aprobo || st.proceso_cerrado) return 'cerrado';
+  if (st.restantes <= 0) return 'agotado';
+  return 'abierto';
+}
+function leerCacheEstado(rut){
+  try {
+    const raw = sessionStorage.getItem(PREFIJO_CACHE_R33 + rut);
+    if (!raw) return null;
+    const o = JSON.parse(raw);
+    return (o && o.st && o.st.ok) ? o.st : null;
+  } catch (e) { return null; }
+}
+function escribirCacheEstado(rut, st){
+  try { sessionStorage.setItem(PREFIJO_CACHE_R33 + rut, JSON.stringify({t: Date.now(), st: st})); } catch (e) {}
+}
+/* Cada página pinta SU cerrojo (botones, paneles, chip) con esta función. */
+function repintarCerrojo(){ if (typeof pintarCerrojoUI === 'function') pintarCerrojoUI(); }
+/* Lo llaman los adaptadores fijarEstado de cada página: cualquier estado fresco
+   que llegue por CUALQUIER camino (doble consulta, sondeo post-envío, revalidación
+   al recuperar el foco) sincroniza la fuente del cerrojo. El acta es la verdad. */
+function sincronizarFuenteCerrojo(st){
+  const f = fuenteDeEstado(st);
+  if (f === 'desconocido') return;
+  cerrojoFuente = f;
+  ultimaOkCerrojo = Date.now();
+  if (cerrojoRut) escribirCacheEstado(cerrojoRut, st);
+}
+function resolverEsperasCerrojo(){
+  const esperas = cerrojoEsperas; cerrojoEsperas = [];
+  esperas.forEach(function(res){ try { res(cerrojoFuente); } catch (e) {} });
+}
+function aplicarEstadoCerrojo(st, rut){
+  if (rut) cerrojoRut = rut;
+  fijarEstado(st);   // el adaptador de la página sincroniza fuente, chip y cerrojo
+  resolverEsperasCerrojo();
+}
+function esperarCerrojo(){
+  if (cerrojoFuente !== 'verificando') return Promise.resolve(cerrojoFuente);
+  return new Promise(function(res){ cerrojoEsperas.push(res); });
+}
+function pedirEstadoCerrojo(rut){
+  /* R33: el nonce evita que el navegador fusione las dos consultas gemelas en un
+     solo pedido de red (coalescing de GET idénticos): la cruza necesita dos
+     respuestas realmente independientes. El backend ignora el parámetro extra. */
+  return fetchConTimeout(URL_BACKEND + '?accion=estado&rut=' + encodeURIComponent(rut) +
+                         '&r33=' + Math.random().toString(36).slice(2), null, MS_TIMEOUT_ESTADO)
+    .then(function(r){ return r.json(); });
+}
+function iniciarVerificacion(rut){
+  cerrojoRut = rut;
+  if (!CONFIGURADO){ cerrojoFuente = 'abierto'; repintarCerrojo(); resolverEsperasCerrojo(); return Promise.resolve('abierto'); }
+  if (cerrojoEnCurso) return cerrojoEnCurso;
+  const enCache = leerCacheEstado(rut);
+  if (enCache){
+    aplicarEstadoCerrojo(enCache, rut);
+    cerrojoEnCurso = revalidarEstado(rut).then(function(){ cerrojoEnCurso = null; return cerrojoFuente; });
+    return cerrojoEnCurso;
+  }
+  // Ya verificado hace poco en esta misma página: no se martilla al servidor.
+  if (cerrojoFuente !== 'desconocido' && cerrojoFuente !== 'verificando' &&
+      cerrojoFuente !== 'sin_red' && Date.now() - ultimaOkCerrojo < MS_REVALIDA_R33){
+    resolverEsperasCerrojo();
+    return Promise.resolve(cerrojoFuente);
+  }
+  cerrojoFuente = 'verificando';
+  repintarCerrojo();
+  /* Doble consulta en paralelo: la primera pinta, la segunda cruza. Solo se
+     aplica una respuesta si PESO mayor que la fuente vigente: así un abierto
+     transitorio nunca tapa un cerrado/agotado confirmado. */
+  const alLlegar = function(st){
+    if (!st || !st.ok) return;
+    const f = fuenteDeEstado(st);
+    if (PESO_FUENTE_R33[f] > PESO_FUENTE_R33[cerrojoFuente]) aplicarEstadoCerrojo(st, rut);
+  };
+  const p1 = pedirEstadoCerrojo(rut).then(alLlegar).catch(function(){});
+  const p2 = pedirEstadoCerrojo(rut).then(alLlegar).catch(function(){});
+  cerrojoEnCurso = Promise.all([p1, p2]).then(function(){
+    cerrojoEnCurso = null;
+    if (cerrojoFuente === 'verificando'){
+      cerrojoFuente = 'sin_red';   // R32: sin red no deja botado al alumno
+      repintarCerrojo();
+      resolverEsperasCerrojo();
+    }
+    return cerrojoFuente;
+  });
+  return cerrojoEnCurso;
+}
+function revalidarEstado(rut){
+  if (!CONFIGURADO) return Promise.resolve(cerrojoFuente);
+  cerrojoRut = rut || cerrojoRut;
+  return pedirEstadoCerrojo(cerrojoRut).then(function(st){
+    if (st && st.ok) aplicarEstadoCerrojo(st, cerrojoRut);
+    return cerrojoFuente;
+  }).catch(function(){ return cerrojoFuente; });
+}
+/* Revalidación silenciosa al volver a la pestaña: si el proceso se cerró en
+   otro dispositivo mientras esta pestaña dormía, el cerrojo se pinta solo. */
+function alRecuperarFocoR33(){
+  if (!cerrojoRut || cerrojoFuente === 'verificando') return;
+  if (Date.now() - ultimaOkCerrojo < MS_REVALIDA_R33) return;
+  revalidarEstado(cerrojoRut);
+}
+window.addEventListener('focus', alRecuperarFocoR33);
+document.addEventListener('visibilitychange', function(){ if (!document.hidden) alRecuperarFocoR33(); });
 /* R32: precalentamiento. El ping usa el fast-path accion=despertar del backend
    (0 lecturas de hoja). Si el primer ping tardó mucho, la instancia estaba fría:
    se dispara un segundo que ya cae en caliente. NO es la defensa principal
@@ -3094,6 +3246,10 @@ $('btnComenzar').addEventListener('click', () => {
   if (validarTodo()) return;
   if (!$('fConsent').checked){ msg.textContent = 'Para continuar debes autorizar el tratamiento de tus datos y el envío del comprobante.'; return; }
   msg.textContent = '';
+  /* R33: la verificación del acta arranca AQUÍ (doble consulta en paralelo), no
+     al mostrar la pantalla de modos: el tiempo que el alumno dedica a leer y
+     confirmar su correo queda solapado con la respuesta del servidor. */
+  iniciarVerificacion(normalizarRut($('fRut').value.trim(), $('fPais').value.trim(), docTipoActual()));
   // R30 (decisión D2): confirmación del correo antes de enviar nada: un dedazo
   // aquí deja el comprobante oficial en una casilla equivocada.
   $('chipCorreoTxt').textContent = $('fCorreo').value.trim().toLowerCase();
@@ -3120,27 +3276,77 @@ async function continuarRegistro(){
   $('pantallaRegistro').classList.add('oculto');
   $('pantallaModos').classList.remove('oculto');
   $('saludoModos').textContent = 'Hola, ' + nombre + ': elige cómo quieres trabajar ahora.';
-  chip('Consultando tus intentos oficiales…');
-  const st = await consultarEstado(rutN);
-  if (st.aprobo || st.proceso_cerrado || st.restantes <= 0) pintarBloqueoOficial(st);
+  /* R33: la doble consulta ya partió al confirmar la identidad; aquí solo se
+     garantiza el vuelo único y se pinta el cerrojo vigente. La pantalla de modos
+     sigue saliendo de inmediato (la navegación optimista de R32 se conserva),
+     pero el botón oficial YA NACE inapresable mientras el acta no confirme:
+     «Verificando tus intentos oficiales…». Un proceso cerrado, por tanto, nunca
+     deja entrar al panel oficial ni siquiera un segundo. */
+  iniciarVerificacion(rutN);
+  repintarCerrojo();
 }
 /* R32(a): el acta respondió tarde y dice que el proceso oficial está cerrado o
    agotado. Se informa en la pantalla de modos y, si el alumno ya había entrado al
    examen oficial, se vuelve a modos sin borrar nada. */
-function pintarBloqueoOficial(st){
+function pintarBloqueoOficial(st, sinRebote){
   const cerrado = st.aprobo || st.proceso_cerrado;
   $('msgModos').textContent = cerrado
     ? 'Tu proceso de evaluación quedó CERRADO con tu aprobación (nota final: ' + (st.mejor != null ? st.mejor + '%' : 'aprobado') + '). No necesitas rendir más intentos oficiales; puedes seguir practicando todas las veces que quieras.'
     : 'Ya usaste tus 3 intentos oficiales. Tu nota final es el mejor intento: ' + st.mejor + '%. Puedes seguir practicando sin límite.';
   const btnOf = $('btnOficial');
   if (btnOf) btnOf.disabled = true;
-  if (modo === 'oficial' && !$('pantallaExamen').classList.contains('oculto')){
+  /* R33: sinRebote se usa cuando el alumno está mirando su resultado oficial
+     (panel aprobado/reprobado): el cerrojo informa y deshabilita, pero no le
+     arrebata la pantalla de resultado que se ganó con el envío. */
+  if (!sinRebote && modo === 'oficial' && !$('pantallaExamen').classList.contains('oculto')){
     $('pantallaExamen').classList.add('oculto');
     $('pantallaModos').classList.remove('oculto');
   }
 }
+/* R33: pinta el cerrojo de la tarjeta oficial en la pantalla de modos.
+   verificando -> botón gris inapresable «Verificando tus intentos oficiales…»
+   cerrado/agotado -> mensaje claro + botón gris con el motivo
+   sin_red -> se permite entrar (el servidor valida al enviar, sin consumir)
+   abierto -> botón verde habilitado, igual que antes. */
+function pintarCerrojoUI(){
+  const btn = $('btnOficial');
+  if (!btn) return;
+  const f = cerrojoFuente;
+  /* El gris del botón deshabilitado ya vive en el CSS (.tarjeta button:disabled),
+     así que aquí solo se gobiernan el estado disabled y el texto. */
+  if (f === 'verificando'){
+    btn.disabled = true;
+    btn.textContent = 'Verificando tus intentos oficiales…';
+    chip('Verificando tus intentos oficiales…');
+    return;
+  }
+  if (f === 'cerrado' || f === 'agotado'){
+    const panel = $('panelResultado');
+    const conResultado = !!panel && /aprobado|reprobado/.test(panel.className);
+    pintarBloqueoOficial(estadoOficial, conResultado);
+    btn.textContent = f === 'cerrado' ? 'Proceso cerrado por aprobación' : 'Intentos oficiales agotados';
+    return;
+  }
+  if (f === 'sin_red'){
+    btn.disabled = false;
+    btn.textContent = 'Rendir prueba oficial';
+    if (!$('msgModos').textContent)
+      $('msgModos').textContent = 'No pudimos confirmar tus intentos ahora mismo; el servidor los verificará al enviar.';
+    chipOficial();
+    return;
+  }
+  btn.disabled = false;
+  btn.textContent = 'Rendir prueba oficial';
+  chipOficial();
+}
 $('btnPractica').addEventListener('click', () => abrirExamen('practica'));
 $('btnOficial').addEventListener('click', () => {
+  /* R33: defensa en profundidad. El botón ya nace inapresable mientras verifica,
+     pero si algún camino lograra disparar el clic, aquí se rechaza la entrada. */
+  if (cerrojoFuente === 'verificando'){
+    $('msgModos').textContent = 'Estamos verificando tus intentos oficiales en el acta; el botón se habilita en cuanto responda.';
+    return;
+  }
   if (estadoOficial.aprobo || estadoOficial.proceso_cerrado){
     $('msgModos').textContent = 'Tu proceso de evaluación quedó CERRADO con tu aprobación (nota final: ' + (estadoOficial.mejor != null ? estadoOficial.mejor + '%' : 'aprobado') + '). No necesitas rendir más intentos oficiales; puedes seguir practicando todas las veces que quieras.';
     return;
