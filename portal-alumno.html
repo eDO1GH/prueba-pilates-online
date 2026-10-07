@@ -1,4 +1,16 @@
 
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Examen instructorado de Pilates Reformer- Campus — portal del alumno</title>
+<style>
+  :root{
+    --borde:#94a3b8; --texto:#111827; --punto:#dc2626; --tipo:#64748b;
+    --pista:#2563eb; --linea:#cbd5e1; --fondo:#f1f5f9;
+    --ok:#16a34a; --mal:#dc2626;
+  }
   *{box-sizing:border-box}
   html,body{margin:0;padding:0}
   body{font-family:Arial,Helvetica,sans-serif; line-height:1.45; background:var(--fondo); color:var(--texto)}
@@ -2619,6 +2631,10 @@ let estadoOficial = {intentos_usados:0, restantes:3, mejor:null};
 
 function chip(txt){ $('chipIntentos').textContent = txt; }
 function chipOficial(){
+  if (estadoOficial && (estadoOficial.aprobo || estadoOficial.proceso_cerrado)){
+    chip('Prueba oficial · proceso cerrado por aprobación · nota final: ' + (estadoOficial.mejor != null ? estadoOficial.mejor + '%' : '—'));
+    return;
+  }
   chip(`Prueba oficial · intentos usados: ${estadoOficial.intentos_usados} de 3 · restantes: ${estadoOficial.restantes}` +
        (estadoOficial.mejor != null ? ` · mejor nota: ${estadoOficial.mejor}%` : ''));
 }
@@ -2748,6 +2764,10 @@ $('btnComenzar').addEventListener('click', async () => {
 });
 $('btnPractica').addEventListener('click', () => abrirExamen('practica'));
 $('btnOficial').addEventListener('click', () => {
+  if (estadoOficial.aprobo || estadoOficial.proceso_cerrado){
+    $('msgModos').textContent = 'Tu proceso de evaluación quedó CERRADO con tu aprobación (nota final: ' + (estadoOficial.mejor != null ? estadoOficial.mejor + '%' : 'aprobado') + '). No necesitas rendir más intentos oficiales; puedes seguir practicando todas las veces que quieras.';
+    return;
+  }
   if (estadoOficial.restantes <= 0){
     $('msgModos').textContent = 'Ya usaste tus 3 intentos oficiales. Tu nota final es el mejor intento: ' + estadoOficial.mejor + '%. Puedes seguir practicando sin límite.';
     return;
@@ -2828,7 +2848,9 @@ $('btnEnviar').addEventListener('click', async () => {
     panel.className = 'bloqueado';
     panel.textContent = salida.res.error === 'intentos agotados'
       ? 'Ya usaste tus 3 intentos oficiales. Tu nota final es el mejor intento registrado. Puedes seguir practicando sin límite.'
-      : 'El servidor rechazó el envío: ' + salida.res.error + '. No se consumió tu intento.';
+      : (salida.res.error === 'proceso_cerrado_por_aprobacion'
+          ? 'Tu proceso oficial ya estaba CERRADO por una aprobación registrada en el acta. Este intento no se registró ni consumió.'
+          : 'El servidor rechazó el envío: ' + salida.res.error + '. No se consumió tu intento.');
     btn.disabled = false; btn.textContent = 'Enviar respuestas';
     return;
   }
