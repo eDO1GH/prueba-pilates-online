@@ -4,7 +4,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>Examen instructorado de Pilates Reformer- Campus — prueba en línea</title>
+<title>Examen instructorado de Pilates Reformer - Campus Virtual — prueba en línea</title>
 <style>
   :root{
     --borde:#94a3b8; --texto:#111827; --punto:#dc2626; --tipo:#64748b;
@@ -111,6 +111,18 @@
   .opciones span{overflow-wrap:anywhere}
   .acciones{margin-top:32px; text-align:center}
   .oculto{display:none !important}
+  /* R30: validación inline accesible + selector de documento */
+  /* R30: errores en flujo normal, bajo su campo. Aparecen al presionar
+     Comenzar y se limpian al corregir (evento input): ningún cambio de layout
+     ocurre entre el mousedown y el mouseup de un clic, así el botón nunca
+     "se mueve" bajo el cursor (defecto detectado por S9 en desarrollo).
+     Sin pointer-events raros ni overlays: nada tapa los campos de al lado. */
+  .err{margin:4px 0 0; padding:3px 8px; font:700 12.5px/1.45 Arial,sans-serif;
+       color:#b91c1c; background:#fff1f2; border:1px solid #fecdd3; border-radius:6px}
+  .campo input.mal{border-color:#dc2626; background:#fef2f2}
+  .docradio{display:flex; gap:18px; margin-top:4px}
+  .docradio label{display:flex; align-items:center; gap:6px; font:14px Arial,sans-serif; color:#334155; cursor:pointer}
+  .docradio input{width:18px; height:18px; margin:0; accent-color:#1e40af}
   @media (max-width:640px){
     main{padding:16px 12px 44px}
     h1{font-size:20px}
@@ -130,7 +142,7 @@
 
 <main>
   <div class="banner">Test de Pilates · 26 preguntas · 26 puntos · 3 intentos, vale el mejor</div>
-  <h1>Examen instructorado de Pilates Reformer- Campus</h1>
+  <h1>Examen instructorado de Pilates Reformer - Campus Virtual</h1>
 
   <div class="aviso-config oculto" id="avisoConfig">
     Configuración pendiente: falta pegar la URL del backend de Google Apps Script
@@ -142,12 +154,17 @@
   <!-- ============ REGISTRO ============ -->
   <section class="tarjeta" id="pantallaRegistro">
     <h2>Identificación del alumno</h2>
-    <div class="campo"><label for="fNombre">Nombre y apellido</label><input id="fNombre" autocomplete="name"></div>
-    <div class="campo"><label for="fCorreo">Correo personal (recibirás ahí tu resultado)</label><input id="fCorreo" type="email" autocomplete="email"></div>
-    <div class="campo"><label for="fRut">RUT / DNI</label><input id="fRut" placeholder="99.999.999-9 · 99999999-9 · 999999999">
-      <p class="hint">Puedes escribirlo con puntos, guion o sin ellos: se normaliza solo
-      (para Chile, 99.999.999-9 queda como 99999999-9). Usa siempre el mismo: es tu identificador de intentos.</p></div>
-    <div class="campo"><label for="fPais">País de origen</label><input id="fPais" autocomplete="country-name"></div>
+    <div class="campo"><label for="fNombre">Nombre y apellidos</label><input id="fNombre" autocomplete="name" aria-describedby="errNombre"><p class="err oculto" id="errNombre" role="alert"></p></div>
+    <div class="campo"><label for="fCorreo">Correo personal (recibirás ahí tu resultado)</label><input id="fCorreo" type="email" autocomplete="email" aria-describedby="errCorreo"><p class="err oculto" id="errCorreo" role="alert"></p></div>
+    <div class="campo"><label id="lblDocTipo">Documento de identidad</label>
+      <div class="docradio" role="radiogroup" aria-labelledby="lblDocTipo">
+        <label><input type="radio" name="docTipo" id="docRut" value="RUT" checked> RUT (Chile)</label>
+        <label><input type="radio" name="docTipo" id="docDni" value="DNI"> DNI (extranjero)</label>
+      </div>
+    </div>
+    <div class="campo"><label for="fRut" id="lblRut">RUT</label><input id="fRut" placeholder="12.345.678-5" autocomplete="off" aria-describedby="errRut hintRut"><p class="err oculto" id="errRut" role="alert"></p>
+      <p class="hint" id="hintRut">Escríbelo como en tu carnet: los puntos y el guion se agregan solos y verificamos el dígito verificador. Usa siempre el mismo: es tu identificador de intentos.</p></div>
+    <div class="campo"><label for="fPais">País de origen</label><input id="fPais" autocomplete="country-name" aria-describedby="errPais"><p class="err oculto" id="errPais" role="alert"></p></div>
     <div class="campo" style="display:flex; gap:10px; align-items:flex-start">
       <input id="fConsent" type="checkbox" style="width:20px; height:20px; margin-top:2px; flex:0 0 auto">
       <label for="fConsent" style="font:13px/1.5 Arial,sans-serif; color:#334155; cursor:pointer">
@@ -159,6 +176,13 @@
     despierta en ese momento; esta página lo precalienta al abrirse, así que al terminar de escribir tus datos
     ya debería estar listo.</p>
     <button type="button" id="btnComenzar">Comenzar la prueba</button>
+    <div id="chipCorreo" class="oculto" role="status" aria-live="polite" style="margin-top:12px; padding:12px 16px; border-radius:10px; background:#eff6ff; border:1.5px solid #2563eb; color:#1e3a8a; font:14px/1.5 Arial,sans-serif; text-align:center">
+      Tu comprobante llegará a <strong id="chipCorreoTxt"></strong>. ¿Está bien escrito?
+      <div style="display:flex; gap:10px; justify-content:center; margin-top:10px">
+        <button type="button" id="btnCorreoOk" style="width:auto; padding:10px 22px; font:700 14px Arial,sans-serif; border:0; border-radius:8px; background:#16a34a; color:#fff; cursor:pointer">Sí, está bien</button>
+        <button type="button" id="btnCorreoNo" style="width:auto; padding:10px 22px; font:700 14px Arial,sans-serif; border:0; border-radius:8px; background:#475569; color:#fff; cursor:pointer">Corregir</button>
+      </div>
+    </div>
     <p id="msgRegistro" style="font:13px Arial,sans-serif; color:#7f1d1d; min-height:18px; margin:10px 0 0"></p>
   </section>
 
@@ -584,13 +608,13 @@
 <script>
 /* ===== CONFIG: único punto que requiere intervención humana ===== */
 const CONFIG = {
-  APPS_SCRIPT_URL: 'https://script.google.com/macros/s/AKfycbxvdj1PuQ3DViKL9QqLkqsDOyjQ3Pcw4WEtwY4dSb4-xYZujSAke9hCQmhTqf6QsheM/exec',   // URL /exec de la web app de Apps Script
+  APPS_SCRIPT_URL: 'https://script.google.com/macros/s/AKfycbxvdj1PuQ3DViKL9QqLkqsDOyjQ3Pcw4WEtwY4dSb4-xYZujSAke9hCQmhTqf6QsheM/exec',   // URL /exec de Apps Script (se completa con la env APPS_SCRIPT_URL al generar)
   TEST_ID: 'reformer-campus-26'
 };
 const TEST = {
  "schema_version": "2.0",
  "meta": {
-  "titulo": "Examen instructorado de Pilates Reformer- Campus",
+  "titulo": "Examen instructorado de Pilates Reformer - Campus Virtual",
   "materia": "Pilates",
   "institucion": "",
   "docente": "",
@@ -630,6 +654,45 @@ const TEST = {
    }
   ],
   "modo_examen": "resuelto"
+ },
+ "identidad": {
+  "nota": "R30: reglas de validación del registro del alumno. Fuente de verdad única: los builders y la suite leen este bloque; Code.gs y mock_backend.js lo espejan (verificar coincidencia en S9/S10).",
+  "doc_tipos": [
+   "RUT",
+   "DNI"
+  ],
+  "rut": {
+   "digitos_min": 7,
+   "digitos_max": 8,
+   "dv": "mod-11 chileno (secuencia 2..7 de derecha a izquierda; resto 0 -> '0', resto 1 -> 'K')",
+   "rechazar_degenerados": true,
+   "degenerados": "dígitos todos iguales (11.111.111-1) o consecutivos asc/desc (12.345.678-5)"
+  },
+  "dni": {
+   "digitos_min": 5,
+   "digitos_max": 18,
+   "solo_digitos": true
+  },
+  "nombre": {
+   "palabras_min": 2,
+   "letras_por_palabra_min": 2,
+   "largo_max": 80,
+   "caracteres": "letras con tildes, ñ/ü, apóstrofe y guion"
+  },
+  "correo": {
+   "tld_min": 2,
+   "largo_max": 254,
+   "prohibidos": "espacios, comas, puntos y comas, puntos consecutivos, punto inicial/final en la parte local",
+   "normalizacion": "minúsculas"
+  },
+  "pais": {
+   "largo_min": 2,
+   "sin_digitos": true
+  },
+  "backend": {
+   "error": "datos_invalidos",
+   "orden": "idempotencia R28 primero; validación después; rechazo no consume intento ni escribe fila ni envía correo"
+  }
  },
  "fuentes": [
   {
@@ -2575,9 +2638,12 @@ const CONFIGURADO = urlMock || !CONFIG.APPS_SCRIPT_URL.startsWith('__');
 
 const $ = id => document.getElementById(id);
 const escT = s => String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
-function normalizarRut(x, pais){
+
+/* ===== R30: validación de identidad (espejo del backend) ===== */
+function normalizarRut(x, pais, docTipo){
   let s = String(x || '').toUpperCase().replace(/[\s.]/g, '');
   if (!s) return s;
+  if (String(docTipo || '').toUpperCase() === 'DNI') return s.replace(/-/g, '');
   if (s.indexOf('-') === -1){
     const cl = /chile/i.test(pais || '');
     if ((cl && /^\d{7,9}[0-9K]$/.test(s)) || /^\d{8}[0-9K]$/.test(s)){
@@ -2589,6 +2655,186 @@ function normalizarRut(x, pais){
   }
   return s;
 }
+const RE_PALABRA_NOMBRE = /^[A-Za-zÁÉÍÓÚÜÑáéíóúüñ'’-]{2,}$/;
+const RE_CORREO = /^[A-Za-z0-9!#$%&'*+/=?^_`{|}~-]+(\.[A-Za-z0-9!#$%&'*+/=?^_`{|}~-]+)*@[A-Za-z0-9]([A-Za-z0-9-]*[A-Za-z0-9])?(\.[A-Za-z0-9]([A-Za-z0-9-]*[A-Za-z0-9])?)+$/;
+function dvRut(cuerpo){
+  let suma = 0, mult = 2;
+  for (let i = cuerpo.length - 1; i >= 0; i--){
+    suma += Number(cuerpo.charAt(i)) * mult;
+    mult = mult === 7 ? 2 : mult + 1;
+  }
+  const r = suma % 11;
+  return r === 0 ? '0' : (r === 1 ? 'K' : String(11 - r));
+}
+function rutDegenerado(cuerpo){
+  if (/^(\d)\1+$/.test(cuerpo)) return true;
+  let asc = true, desc = true;
+  for (let i = 1; i < cuerpo.length; i++){
+    const d = Number(cuerpo.charAt(i)), p = Number(cuerpo.charAt(i - 1));
+    if (d !== p + 1) asc = false;
+    if (d !== p - 1) desc = false;
+  }
+  return asc || desc;
+}
+function docTipoActual(){
+  const r = document.querySelector('input[name="docTipo"]:checked');
+  return r ? r.value : 'RUT';
+}
+/* Devuelve '' si el campo es válido, o el mensaje cálido de error.
+   Mismas reglas que validarAlumno_ en Code.gs. */
+function validarCampo(campo){
+  if (campo === 'nombre'){
+    const nombre = $('fNombre').value.trim();
+    if (!nombre) return 'Escribe tu nombre completo.';
+    if (nombre.length > 80) return 'El nombre es demasiado largo (máximo 80 caracteres).';
+    const palabras = nombre.split(/\s+/);
+    if (palabras.length < 2 || !palabras.every(p => RE_PALABRA_NOMBRE.test(p)))
+      return 'Escribe tu nombre y al menos un apellido, solo con letras (por ejemplo: Pablo Riquelme Arenas).';
+    return '';
+  }
+  if (campo === 'correo'){
+    const correo = $('fCorreo').value.trim().toLowerCase();
+    if (!correo) return 'Escribe tu correo: ahí llegará tu comprobante.';
+    if (correo.length > 254 || correo.split('@')[0].indexOf('..') >= 0 || correo.charAt(0) === '.' ||
+        !RE_CORREO.test(correo) || !/\.[A-Za-z]{2,}$/.test(correo))
+      return 'Revisa el correo: debe tener el formato nombre@dominio.cl (ahí llegará tu comprobante).';
+    return '';
+  }
+  if (campo === 'rut'){
+    const tipo = docTipoActual();
+    const doc = $('fRut').value.trim().toUpperCase().replace(/[\s.-]/g, '');
+    if (!doc) return 'Escribe tu ' + tipo + '.';
+    if (tipo === 'RUT'){
+      const m = doc.match(/^(\d{7,8})([0-9K])$/);
+      if (!m) return 'El RUT chileno lleva 7 u 8 dígitos más su dígito verificador (formato 12.345.678-5). Si tu documento es extranjero, elige DNI arriba.';
+      if (dvRut(m[1]) !== m[2]) return 'El dígito verificador no corresponde a ese RUT. Revísalo en tu carnet (formato 12.345.678-5).';
+      if (rutDegenerado(m[1])) return 'Ese RUT no parece un documento real (dígitos repetidos o consecutivos). Usa el RUT de tu carnet.';
+      return '';
+    }
+    if (!/^\d{5,18}$/.test(doc)) return 'El DNI debe tener entre 5 y 18 dígitos, sin letras ni guiones (usa el número de tu documento).';
+    return '';
+  }
+  if (campo === 'pais'){
+    const pais = $('fPais').value.trim();
+    if (!pais) return 'Escribe tu país de origen.';
+    if (pais.length < 2 || /\d/.test(pais)) return 'Escribe tu país de origen (solo letras).';
+    return '';
+  }
+  return '';
+}
+/* Marcado inline accesible (enfoque d): aria-invalid + mensaje por campo,
+   sin alert(). marcarCampo toca SOLO su campo: las marcas de varios campos
+   inválidos coexisten (si limpiara los demás, la última llamada de validarTodo
+   borraría todo — defecto detectado por S9 en desarrollo). */
+function marcarCampo(campo, mensaje){
+  const mapa = {nombre:['fNombre','errNombre'], correo:['fCorreo','errCorreo'], rut:['fRut','errRut'], pais:['fPais','errPais']};
+  const par = mapa[campo];
+  if (!par) return;
+  const inp = $(par[0]), err = $(par[1]);
+  if (mensaje){
+    inp.classList.add('mal');
+    inp.setAttribute('aria-invalid', 'true');
+    err.textContent = mensaje; err.classList.remove('oculto');
+  } else {
+    inp.classList.remove('mal');
+    inp.removeAttribute('aria-invalid');
+    err.textContent = ''; err.classList.add('oculto');
+  }
+}
+function limpiarMarcas(){ ['nombre', 'correo', 'rut', 'pais'].forEach(c => marcarCampo(c, '')); }
+function validarTodo(){
+  let primero = null;
+  ['nombre', 'correo', 'rut', 'pais'].forEach(c => {
+    const e = validarCampo(c);
+    marcarCampo(c, e);
+    if (e && !primero) primero = c;
+  });
+  if (primero){
+    $('msgRegistro').textContent = 'Casi listo: corrige los campos destacados para continuar.';
+    $(primero === 'rut' ? 'fRut' : primero === 'nombre' ? 'fNombre' : primero === 'correo' ? 'fCorreo' : 'fPais').focus();
+    return primero;
+  }
+  $('msgRegistro').textContent = '';
+  return null;
+}
+/* Ayuda de tipeo (enfoque a): RUT -> dígitos con puntos + guion de DV automático
+   (K solo al final); DNI -> solo dígitos. La validación nunca depende del formato. */
+function conPuntos(s){ return s.replace(/\B(?=(\d{3})+(?!\d))/g, '.'); }
+function formatearDoc(v){
+  if (docTipoActual() === 'DNI') return String(v).replace(/[^\d]/g, '').slice(0, 18);
+  let s = String(v).toUpperCase().replace(/[^0-9K]/g, '');
+  let dv = '';
+  if (s.indexOf('K') >= 0){ dv = 'K'; s = s.replace(/K/g, ''); }
+  if (!dv && s.length > 8){ dv = s.charAt(8); s = s.slice(0, 8); }
+  s = s.slice(0, 8);
+  if (!s) return '';
+  return conPuntos(s) + (dv ? '-' + dv : '');
+}
+function docTipoUI(){
+  const esRut = docTipoActual() === 'RUT';
+  $('lblRut').textContent = esRut ? 'RUT' : 'DNI';
+  $('fRut').placeholder = esRut ? '12.345.678-5' : '12345678';
+  $('fRut').inputMode = esRut ? 'text' : 'numeric';
+  $('hintRut').textContent = esRut
+    ? 'Escríbelo como en tu carnet: los puntos y el guion se agregan solos y verificamos el dígito verificador. Usa siempre el mismo: es tu identificador de intentos.'
+    : 'Escribe solo los dígitos de tu documento (entre 5 y 18). Usa siempre el mismo: es tu identificador de intentos.';
+  $('fRut').value = formatearDoc($('fRut').value);
+}
+function volverARegistro(campo, mensaje){
+  /* R30: si el backend responde datos_invalidos (no debería pasar: el formulario
+     ya valida), se vuelve a la pantalla de datos con el campo marcado.
+     El intento NO se consumió. */
+  $('pantallaExamen').classList.add('oculto');
+  if ($('pantallaModos')) $('pantallaModos').classList.add('oculto');
+  $('pantallaRegistro').classList.remove('oculto');
+  const mapa = {nombre:'fNombre', correo:'fCorreo', rut:'fRut', pais:'fPais'};
+  limpiarMarcas();
+  if (campo && mapa[campo]){
+    marcarCampo(campo, mensaje || '');
+    $(mapa[campo]).focus();
+  }
+  $('msgRegistro').textContent = 'El servidor nos pidió verificar tus datos: ' +
+    (mensaje || 'revisa los campos destacados') +
+    '. Tu intento NO se consumió: corrige el dato y vuelve a comenzar.';
+  window.scrollTo({top:0});
+}
+/* Cableado común de los dos frontends (mismos IDs en ambas páginas). */
+(function(){
+  const campos = {fNombre:'nombre', fCorreo:'correo', fRut:'rut', fPais:'pais'};
+  Object.keys(campos).forEach(id => {
+    // Validación al enviar (validarTodo) + limpieza al corregir. SIN blur:
+    // escribir sobre un campo marcado revalida ese campo y quita su error.
+    $(id).addEventListener('input', () => {
+      if ($(id).classList.contains('mal')) marcarCampo(campos[id], validarCampo(campos[id]));
+    });
+  });
+  $('fRut').addEventListener('input', e => { e.target.value = formatearDoc(e.target.value); });
+  document.querySelectorAll('input[name="docTipo"]').forEach(r =>
+    r.addEventListener('change', () => { docTipoUI(); marcarCampo('rut', validarCampo('rut')); }));
+  $('fPais').addEventListener('input', () => {
+    // Preselección por país (decisión D1): Chile -> RUT; otro país -> DNI.
+    // El estudiante siempre puede cambiarlo a mano después. Va en 'input' (no en
+    // 'blur') para que ningún cambio de layout ocurra entre mousedown y mouseup
+    // del clic en Comenzar.
+    const p = $('fPais').value.trim().toLowerCase();
+    if (!p) return;
+    $(/chile/.test(p) ? 'docRut' : 'docDni').checked = true;
+    docTipoUI();
+    if (!$('errRut').classList.contains('oculto')) marcarCampo('rut', validarCampo('rut'));
+  });
+  $('btnCorreoNo').addEventListener('click', () => {
+    $('chipCorreo').classList.add('oculto');
+    $('msgRegistro').textContent = '';
+    marcarCampo('correo', '');
+    $('fCorreo').focus();
+  });
+  $('btnCorreoOk').addEventListener('click', () => {
+    $('chipCorreo').classList.add('oculto');
+    continuarRegistro();   // definida por cada página (declaración hoisted)
+  });
+  docTipoUI();
+})();
+
 let alumno = null;
 let estado = {intentos_usados:0, restantes:3, mejor:null};
 
@@ -2685,18 +2931,30 @@ function pantalllaExamen(){
   $('pantallaExamen').classList.remove('oculto');
   window.scrollTo({top:0});
 }
-$('btnComenzar').addEventListener('click', async () => {
-  const btn = $('btnComenzar');
-  const nombre = $('fNombre').value.trim(), correo = $('fCorreo').value.trim(),
-        rut = $('fRut').value.trim(), pais = $('fPais').value.trim();
+$('btnComenzar').addEventListener('click', () => {
   const msg = $('msgRegistro');
-  if (!nombre || !correo || !rut || !pais) { msg.textContent = 'Completa los cuatro campos para comenzar.'; return; }
+  // R30: validación real campo a campo (ya no basta con "no vacío"). De paso se
+  // corrige un defecto antiguo: el botón quedaba deshabilitado si el correo fallaba.
+  if (validarTodo()) return;
   if (!$('fConsent').checked) { msg.textContent = 'Para continuar debes autorizar el tratamiento de tus datos y el envío del comprobante.'; return; }
-  btn.disabled = true; btn.textContent = 'Consultando intentos disponibles…';
-  if (!/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(correo)) { msg.textContent = 'Revisa el correo: el resultado se enviará ahí.'; return; }
-  const rutN = normalizarRut(rut, pais);
-  alumno = {nombre, correo, rut: rutN, pais, consentimiento: 'SI'};
+  msg.textContent = '';
+  // R30 (decisión D2): confirmación del correo antes de enviar nada: un dedazo
+  // aquí deja el comprobante oficial en una casilla equivocada.
+  $('chipCorreoTxt').textContent = $('fCorreo').value.trim().toLowerCase();
+  $('chipCorreo').classList.remove('oculto');
+  $('btnCorreoOk').focus();
+});
+async function continuarRegistro(){
+  const btn = $('btnComenzar');
+  const msg = $('msgRegistro');
+  const nombre = $('fNombre').value.trim();
+  const correo = $('fCorreo').value.trim().toLowerCase();
+  const pais = $('fPais').value.trim();
+  const tipo = docTipoActual();
+  const rutN = normalizarRut($('fRut').value.trim(), pais, tipo);
+  alumno = {nombre, correo, rut: rutN, pais, consentimiento: 'SI', doc_tipo: tipo};
   $('fRut').value = rutN;
+  btn.disabled = true; btn.textContent = 'Consultando intentos disponibles…';
   await consultarEstado(rutN);
   btn.disabled = false; btn.textContent = 'Comenzar la prueba';
   if (estado.aprobo || estado.proceso_cerrado) {
@@ -2708,7 +2966,7 @@ $('btnComenzar').addEventListener('click', async () => {
     return;
   }
   pantalllaExamen();
-});
+}
 function respondida(id){
   return document.querySelectorAll(`[name="p${id}"]:checked, [name="p${id}[]"]:checked`).length > 0;
 }
@@ -2740,6 +2998,14 @@ $('btnEnviar').addEventListener('click', async () => {
   const body = JSON.stringify({accion:'registrar', test_id: CONFIG.TEST_ID, alumno, respuestas, id_intento: nuevoIdIntento()});
   const salida = await envioRobusto(body, alumno.rut, usadosBase, respuestas);
   if (salida.tipo === 'rechazo') {
+    if (salida.res.error === 'datos_invalidos'){
+      // R30: el backend validó más estricto que el formulario (no debería ocurrir:
+      // las reglas son espejo). Se vuelve a la pantalla de datos con el campo
+      // marcado; el intento NO se consumió.
+      volverARegistro(salida.res.campo, salida.res.mensaje);
+      btn.disabled = false; btn.textContent = 'Enviar respuestas';
+      return;
+    }
     panel.className = 'bloqueado';
     panel.textContent = salida.res.error === 'intentos agotados'
       ? 'Ya usaste los 3 intentos. Tu nota final es el mejor intento registrado.'
