@@ -154,6 +154,12 @@
   .repaso .r{display:block; font:700 13px Arial,sans-serif; color:#14532d; overflow-wrap:anywhere}
   .repaso .cita{display:block; margin-top:4px; font:italic 12.5px Arial,sans-serif; color:#475569; overflow-wrap:anywhere}
 </style>
+<script>/* R32: ping de precalentamiento TEMPRANO. Se dispara antes de parsear
+el resto de la página (el HTML pesa cientos de KB) para que la instancia de Apps Script
+empiece a despertar mientras el alumno todavía lee la portada. Usa el fast-path
+accion=despertar del backend, que no toca la planilla. Respeta ?mock= de la suite. */
+(function(){try{var m=new URLSearchParams(location.search).get('mock');var u=m||'https://script.google.com/macros/s/AKfycbxvdj1PuQ3DViKL9QqLkqsDOyjQ3Pcw4WEtwY4dSb4-xYZujSAke9hCQmhTqf6QsheM/exec';
+if(u&&u.indexOf('__')!==0){fetch(u+'?accion=despertar',{keepalive:true}).catch(function(){});}}catch(e){}})();</script>
 </head>
 <body>
 
@@ -2885,43 +2891,97 @@ function chipOficial(){
   chip(`Prueba oficial · intentos usados: ${estadoOficial.intentos_usados} de 3 · restantes: ${estadoOficial.restantes}` +
        (estadoOficial.mejor != null ? ` · mejor nota: ${estadoOficial.mejor}%` : ''));
 }
-async function consultarEstado(rut){
-  if (!CONFIGURADO){ estadoOficial = {intentos_usados:0, restantes:3, mejor:null}; chipOficial(); return; }
+/* R32: adaptadores de la capa de red compartida (JS_RED). El estado oficial vive
+   en esta página; la capa de red lo lee y lo escribe por estas dos funciones. */
+function obtenerEstado(){ return estadoOficial; }
+function fijarEstado(st){ estadoOficial = st; chipOficial(); }
+
+/* ===== CAPA DE RED COMPARTIDA (R32) =====
+   UNA sola fuente de verdad: build_html_online.py define este bloque y
+   build_html_portal.py lo extrae por regex (igual que CSS y JS_IDENTIDAD). Los
+   dos HTML publicados llevan literalmente el mismo código de red y no pueden
+   divergir; la suite S11 lo afirma.
+
+   Adaptadores que cada página define ANTES de este bloque:
+     obtenerEstado() -> devuelve el objeto de estado de intentos actual
+     fijarEstado(st) -> lo guarda y repinta el chip
+
+   Presupuestos de tiempo (R32). El piso de latencia lo pone el cold start de
+   Apps Script, medido en producción con sondas de solo lectura: 5-19 s en frío
+   y 1,6-2,6 s caliente, para el MISMO trabajo. Por eso la regla de diseño no es
+   "esperar menos" sino:
+     1) el humano NUNCA espera una llamada de red para avanzar (entrada optimista);
+     2) el envío se confirma contra el acta EN PARALELO a la respuesta;
+     3) todo fetch tiene timeout (peor caso acotado);
+     4) el servidor mantiene la instancia caliente (trigger keepWarm). */
+/* Solo cuando la página corre contra el mock local de la suite (?mock=...) se
+   permite acortar los presupuestos por query string, para que las pruebas de
+   cortes de conexión no tarden minutos. En producción urlMock es null y los
+   valores son siempre los de aquí abajo. */
+function msOverride(nombre, defecto){
   try {
-    const r = await fetch(URL_BACKEND + '?accion=estado&rut=' + encodeURIComponent(rut));
-    estadoOficial = await r.json(); chipOficial();
-  } catch (e) { estadoOficial = {intentos_usados:0, restantes:3, mejor:null, error:true}; chipOficial(); }
+    if (typeof urlMock === 'undefined' || !urlMock) return defecto;
+    const v = Number(new URLSearchParams(location.search).get(nombre));
+    return v > 0 ? v : defecto;
+  } catch (e) { return defecto; }
 }
-/* ===== ENVÍO ROBUSTO (regresión R26) =====
-   Apps Script puede tardar decenas de segundos en responder y a veces la conexión se
-   corta JUSTO cuando devolvía el resultado: el intento queda registrado y el correo
-   sale, pero el navegador no recibe nada. Por eso: timeout generoso; si no llega
-   respuesta usable NUNCA se afirma "no se consumió" sin consultar antes el acta
-   (?accion=estado) contra los intentos que había antes de enviar; solo con acta que
-   confirma "sin registro nuevo" se reintenta una vez; y con acta que confirma registro,
-   se reconstruye el resultado con la misma clave incrustada y se muestra como oficial. */
-const MS_TIMEOUT_ENVIO = 75000;
+const MS_TIMEOUT_ENVIO = msOverride('msEnvio', 75000);      // POST registrar: se acompaña con sondeo paralelo del acta
+const MS_SONDEO_ACTA = msOverride('msSondeo', 15000);       // timeout de cada consulta al acta
+const MS_ENTRE_SONDEOS = msOverride('msEntreSondeos', 15000);  // pausa entre sondeos (no martillar el servidor)
+const MAX_SONDEOS_ENVIO = 3;         // 3 sondeos = hasta ~45 s comprobando el acta
+const MS_TIMEOUT_ESTADO = msOverride('msEstado', 12000);    // consulta de intentos al entrar (no bloquea la UI)
+const MS_TIMEOUT_DESPERTAR = 8000;   // ping de precalentamiento
+const MS_TOPE_TOTAL_ENVIO = msOverride('msTope', 120000);   // tope duro de pared para todo el envío (peor caso acotado)
+
+function dormir(ms){ return new Promise(function(r){ setTimeout(r, ms); }); }
 function nuevoIdIntento(){
-  // Clave de idempotencia (R28): identifica ESTE envío ante el servidor para que un
-  // reintento automático del navegador no consuma un segundo intento.
+  // Clave de idempotencia (R28): identifica ESTE envío ante el servidor para que
+  // un reintento automático del navegador no consuma un segundo intento.
   try { if (crypto && crypto.randomUUID) return crypto.randomUUID(); } catch (e) {}
   return 'i-' + Date.now() + '-' + Math.floor(Math.random() * 1e9);
 }
 function fetchConTimeout(url, opts, ms){
   const ctrl = new AbortController();
-  const t = setTimeout(() => ctrl.abort(), ms || MS_TIMEOUT_ENVIO);
+  const t = setTimeout(function(){ ctrl.abort(); }, ms || MS_TIMEOUT_ENVIO);
   return fetch(url, Object.assign({}, opts || {}, {signal: ctrl.signal}))
-    .finally(() => clearTimeout(t));
+    .finally(function(){ clearTimeout(t); });
+}
+/* R32: la consulta de estado tiene timeout (antes usaba fetch pelado y podía
+   colgar indefinidamente) y, si falla, NO pisa el estado anterior: la interfaz
+   sigue usable con lo que ya sabía. Devuelve el estado vigente. */
+async function consultarEstado(rut, ms){
+  if (!CONFIGURADO){ fijarEstado({intentos_usados:0, restantes:3, mejor:null}); return obtenerEstado(); }
+  try {
+    const r = await fetchConTimeout(URL_BACKEND + '?accion=estado&rut=' + encodeURIComponent(rut), null, ms || MS_TIMEOUT_ESTADO);
+    const st = await r.json();
+    if (st && st.ok) fijarEstado(st);
+  } catch (e) {}
+  return obtenerEstado();
+}
+/* R32(e): sondeo del acta. Devuelve apenas el acta confirma un intento nuevo.
+   msPrimera permite sondear de inmediato (verificarRegistro) o dar primero una
+   ventana al POST (envío). onProgreso(n, total) deja mostrar avance real al
+   humano en vez de un botón congelado durante un minuto. */
+async function sondearActa(rut, usadosBase, maxSondeos, msTimeout, onProgreso, msPrimera){
+  let verificado = false, ultimo = null;
+  const n = maxSondeos || MAX_SONDEOS_ENVIO;
+  const primera = msPrimera === undefined ? MS_ENTRE_SONDEOS : msPrimera;
+  for (let i = 0; i < n; i++){
+    await dormir(i === 0 ? primera : MS_ENTRE_SONDEOS);
+    try {
+      const r = await fetchConTimeout(URL_BACKEND + '?accion=estado&rut=' + encodeURIComponent(rut), null, msTimeout || MS_SONDEO_ACTA);
+      const st = await r.json();
+      if (st && st.ok){
+        verificado = true; ultimo = st; fijarEstado(st);
+        if (st.intentos_usados > usadosBase) return {verificado:true, consumido:true, estado:st};
+      }
+    } catch (e) {}
+    if (onProgreso) onProgreso(i + 1, n);
+  }
+  return {verificado:verificado, consumido:false, estado:ultimo};
 }
 async function verificarRegistro(rut, usadosBase){
-  for (let i = 0; i < 2; i++){
-    try {
-      const r = await fetchConTimeout(URL_BACKEND + '?accion=estado&rut=' + encodeURIComponent(rut), null, 20000);
-      const st = await r.json();
-      if (st && st.ok){ estadoOficial = st; chipOficial(); return {verificado:true, consumido: st.intentos_usados > usadosBase, estado: st}; }
-    } catch (e) {}
-  }
-  return {verificado:false, consumido:false, estado:null};
+  return sondearActa(rut, usadosBase, 2, MS_SONDEO_ACTA, null, 0);
 }
 function resultadoLocal(respuestas){
   let correctas = 0;
@@ -2938,31 +2998,79 @@ function resultadoLocal(respuestas){
   });
   return {correctas: correctas, total: total, puntaje: Math.round(correctas / total * 100), aprobado: aprobado};
 }
-async function envioRobusto(body, rut, usadosBase, respuestas){
+/* Resultado reconstruido desde el acta cuando la respuesta HTTP se perdió: la
+   nota se recalcula localmente con la misma clave y los intentos salen del acta.
+   El comprobante va en cola (PENDIENTE) porque ya no se envía en la respuesta. */
+function resultadoDesdeActa(st, respuestas){
+  const local = resultadoLocal(respuestas);
+  return {ok:true, intento: st.intentos_usados, correctas: local.correctas, total: local.total,
+          puntaje: local.puntaje, aprobado: local.aprobado, restantes: st.restantes, mejor: st.mejor,
+          correo_estado: 'PENDIENTE', correo_modo: 'cola', recuperado_del_acta: true};
+}
+async function envioRobusto(body, rut, usadosBase, respuestas, onProgreso){
+  const t0 = Date.now();
   let ultimaV = null;
   for (let vuelta = 0; vuelta < 2; vuelta++){
-    try {
-      const r = await fetchConTimeout(URL_BACKEND, {
+    if (vuelta && Date.now() - t0 > MS_TOPE_TOTAL_ENVIO) break;   // peor caso acotado
+    const ctrl = new AbortController();
+    const tEnvio = setTimeout(function(){ ctrl.abort(); }, MS_TIMEOUT_ENVIO);
+    const pedido = fetch(URL_BACKEND, {
         method: 'POST',
         headers: {'Content-Type': 'text/plain;charset=utf-8'},
-        body: body
-      });
-      const res = await r.json();
-      if (res && res.ok) return {tipo:'ok', res: res};
-      if (res) return {tipo:'rechazo', res: res};
-    } catch (e) { /* corte de red o timeout: verificar antes de decir cualquier cosa */ }
-    ultimaV = await verificarRegistro(rut, usadosBase);
-    if (ultimaV.consumido){
-      const local = resultadoLocal(respuestas);
-      return {tipo:'recuperado', res: {ok:true, intento: ultimaV.estado.intentos_usados,
-        correctas: local.correctas, total: local.total, puntaje: local.puntaje, aprobado: local.aprobado,
-        restantes: ultimaV.estado.restantes, mejor: ultimaV.estado.mejor, correo_estado: 'SI'}};
+        body: body,
+        signal: ctrl.signal
+      })
+      .then(function(r){ return r.json(); })
+      .then(function(res){ return {tipo:'respuesta', res:res}; })
+      .catch(function(){ return {tipo:'fallo'}; })
+      .then(function(x){ clearTimeout(tEnvio); return x; });
+    const sondeo = sondearActa(rut, usadosBase, MAX_SONDEOS_ENVIO, MS_SONDEO_ACTA, onProgreso)
+      .then(function(v){ return {tipo:'sondeo', v:v}; });
+    /* R32(e): la respuesta y el acta corren EN PARALELO. Gana el primero que
+       aporte algo útil. Antes se esperaba 75 s y recién entonces se consultaba
+       el acta dos veces más (115 s de pared) para terminar en el panel ámbar. */
+    let x = await Promise.race([pedido, sondeo]);
+    if (x.tipo === 'sondeo' && !x.v.consumido) x = await pedido;   // el acta aún no ve la fila: dar tiempo a la respuesta
+    if (x.tipo !== 'sondeo' && (x.tipo === 'fallo' || !x.res)) x = await sondeo;   // sin respuesta utilizable: decide el acta
+    if (x.tipo === 'sondeo'){
+      if (x.v.consumido) return {tipo:'recuperado', res: resultadoDesdeActa(x.v.estado, respuestas)};
+      if (!x.v.verificado) return {tipo:'inconfirmable'};
+      ultimaV = x.v;
+      // Verificado y SIN fila nueva: el envío no llegó al acta; reintentar es seguro
+      // (misma clave id_intento, el backend es idempotente).
+      continue;
     }
-    if (!ultimaV.verificado) return {tipo:'inconfirmable'};
-    // Verificado y SIN registro nuevo: reintentar es seguro (sigue en la próxima vuelta).
+    const res = x.res;
+    if (res && res.ok) return {tipo:'ok', res:res};
+    /* R32(b): error_servidor NO significa "intento rechazado": puede que la fila
+       sí se haya escrito (ese era exactamente el defecto de la variable 'fecha':
+       el acta quedaba correcta y la respuesta se perdía). Se consulta el acta
+       antes de afirmar cualquier cosa. */
+    if (res && res.error === 'error_servidor'){
+      const v = await verificarRegistro(rut, usadosBase);
+      if (v.consumido) return {tipo:'recuperado', res: resultadoDesdeActa(v.estado, respuestas)};
+      if (!v.verificado) return {tipo:'inconfirmable'};
+      ultimaV = v;
+      continue;
+    }
+    if (res) return {tipo:'rechazo', res:res};
   }
-  return {tipo:'no_consumido', estado: ultimaV.estado};
+  return {tipo:'no_consumido', estado: ultimaV ? ultimaV.estado : obtenerEstado()};
 }
+/* R32: precalentamiento. El ping usa el fast-path accion=despertar del backend
+   (0 lecturas de hoja). Si el primer ping tardó mucho, la instancia estaba fría:
+   se dispara un segundo que ya cae en caliente. NO es la defensa principal
+   contra el cold start (esa es el trigger keepWarm del servidor): es un refuerzo. */
+function precalentar(ms){
+  if (!CONFIGURADO) return;
+  const t = Date.now();
+  const to = ms || MS_TIMEOUT_DESPERTAR;
+  fetchConTimeout(URL_BACKEND + '?accion=despertar', {keepalive:true}, to)
+    .then(function(){ if (Date.now() - t > 4000) fetchConTimeout(URL_BACKEND + '?accion=despertar', {keepalive:true}, to).catch(function(){}); })
+    .catch(function(){});
+}
+
+
 function respondida(id){
   return document.querySelectorAll(`[name="p${id}"]:checked, [name="p${id}[]"]:checked`).length > 0;
 }
@@ -3013,12 +3121,35 @@ async function continuarRegistro(){
   const rutN = normalizarRut($('fRut').value.trim(), pais, tipo);
   $('fRut').value = rutN;
   alumno = {nombre, correo, rut: rutN, pais, consentimiento: 'SI', doc_tipo: tipo};
-  btn.disabled = true; btn.textContent = 'Consultando tus intentos oficiales…';
-  await consultarEstado(rutN);
   btn.disabled = false; btn.textContent = 'Comenzar la prueba';
+  /* R32(a): LA ENTRADA NO ESPERA AL SERVIDOR. Antes se hacía `await
+     consultarEstado(rutN)` antes de mostrar la pantalla de modos: con la
+     instancia fría (5-19 s medidos en producción) el alumno quedaba bloqueado
+     mirando "Consultando tus intentos oficiales…". Ahora se avanza de inmediato
+     y el estado se confirma en segundo plano, con timeout. La integridad no
+     cambia: el acta sigue siendo la única fuente de verdad y el backend vuelve a
+     validar intentos y aprobación al recibir el envío. */
   $('pantallaRegistro').classList.add('oculto');
   $('pantallaModos').classList.remove('oculto');
   $('saludoModos').textContent = 'Hola, ' + nombre + ': elige cómo quieres trabajar ahora.';
+  chip('Consultando tus intentos oficiales…');
+  const st = await consultarEstado(rutN);
+  if (st.aprobo || st.proceso_cerrado || st.restantes <= 0) pintarBloqueoOficial(st);
+}
+/* R32(a): el acta respondió tarde y dice que el proceso oficial está cerrado o
+   agotado. Se informa en la pantalla de modos y, si el alumno ya había entrado al
+   examen oficial, se vuelve a modos sin borrar nada. */
+function pintarBloqueoOficial(st){
+  const cerrado = st.aprobo || st.proceso_cerrado;
+  $('msgModos').textContent = cerrado
+    ? 'Tu proceso de evaluación quedó CERRADO con tu aprobación (nota final: ' + (st.mejor != null ? st.mejor + '%' : 'aprobado') + '). No necesitas rendir más intentos oficiales; puedes seguir practicando todas las veces que quieras.'
+    : 'Ya usaste tus 3 intentos oficiales. Tu nota final es el mejor intento: ' + st.mejor + '%. Puedes seguir practicando sin límite.';
+  const btnOf = $('btnOficial');
+  if (btnOf) btnOf.disabled = true;
+  if (modo === 'oficial' && !$('pantallaExamen').classList.contains('oculto')){
+    $('pantallaExamen').classList.add('oculto');
+    $('pantallaModos').classList.remove('oculto');
+  }
 }
 $('btnPractica').addEventListener('click', () => abrirExamen('practica'));
 $('btnOficial').addEventListener('click', () => {
@@ -3030,6 +3161,9 @@ $('btnOficial').addEventListener('click', () => {
     $('msgModos').textContent = 'Ya usaste tus 3 intentos oficiales. Tu nota final es el mejor intento: ' + estadoOficial.mejor + '%. Puedes seguir practicando sin límite.';
     return;
   }
+  /* R32(a): si el estado todavía no llegó desde el acta, se abre igual (optimista).
+     Cuando la consulta en segundo plano responda, pintarBloqueoOficial() cierra el
+     examen si corresponde; y al enviar, el backend vuelve a validar todo. */
   abrirExamen('oficial');
 });
 $('btnVolverModos').addEventListener('click', () => {
@@ -3065,7 +3199,7 @@ $('btnEnviar').addEventListener('click', async () => {
   const panel = $('panelResultado');
   const btn = $('btnEnviar');
   btn.disabled = true;
-  btn.textContent = 'Enviando… el servidor puede tardar hasta un minuto';
+  btn.textContent = 'Enviando…';   // R32(e): el progreso real lo pinta onProgreso
   const idIntento = nuevoIdIntento();
   const cuerpo = accion => JSON.stringify({accion, test_id: CONFIG.TEST_ID, alumno, respuestas, id_intento: idIntento});
   if (modo === 'practica'){
@@ -3107,7 +3241,9 @@ $('btnEnviar').addEventListener('click', async () => {
     return;
   }
   const usadosBase = estadoOficial.intentos_usados;
-  const salida = await envioRobusto(cuerpo('registrar'), alumno.rut, usadosBase, respuestas);
+  const salida = await envioRobusto(cuerpo('registrar'), alumno.rut, usadosBase, respuestas, function(n, total){
+    btn.textContent = 'Comprobando en el acta si tu intento quedó registrado… (' + n + ' de ' + total + ')';
+  });
   if (salida.tipo === 'rechazo'){
     if (salida.res.error === 'datos_invalidos'){
       // R30: el backend validó más estricto que el formulario (reglas espejo:
@@ -3122,7 +3258,11 @@ $('btnEnviar').addEventListener('click', async () => {
       ? 'Ya usaste tus 3 intentos oficiales. Tu nota final es el mejor intento registrado. Puedes seguir practicando sin límite.'
       : (salida.res.error === 'proceso_cerrado_por_aprobacion'
           ? 'Tu proceso oficial ya estaba CERRADO por una aprobación registrada en el acta. Este intento no se registró ni consumió.'
-          : 'El servidor rechazó el envío: ' + salida.res.error + '. No se consumió tu intento.');
+          : (salida.res.error === 'servidor_ocupado'
+              ? (salida.res.mensaje || 'El servidor está atendiendo otro envío. Espera unos segundos y vuelve a presionar «Enviar respuestas»: tu intento no se consumió.')
+              : (salida.res.error === 'error_servidor'
+                  ? 'El servidor tuvo un error interno al procesar el envío y comprobamos en el acta que tu intento NO quedó registrado. Tus respuestas siguen marcadas: vuelve a presionar «Enviar respuestas». Si se repite, avisa al docente indicando la hora (detalle: ' + (salida.res.detalle || 'sin detalle') + ').'
+                  : 'El servidor rechazó el envío: ' + salida.res.error + '. No se consumió tu intento.')));
     btn.disabled = false; btn.textContent = 'Enviar respuestas';
     return;
   }
@@ -3136,9 +3276,13 @@ $('btnEnviar').addEventListener('click', async () => {
   }
   if (salida.tipo === 'inconfirmable'){
     panel.className = 'bloqueado';
-    panel.textContent = 'Se perdió la conexión con el servidor y no pudimos confirmar si tu intento quedó registrado. ' +
-      'No vuelvas a enviarlo de inmediato: espera el comprobante por correo o vuelve a entrar con tus datos en 2 o 3 minutos ' +
-      'para consultar tus intentos. Si los intentos no subieron y no llega el correo, puedes reenviar con seguridad.';
+    /* R32(e): este panel aparece mucho menos que antes: el envío se confirma contra
+       el acta en paralelo (3 sondeos de 15 s) y solo se llega aquí si ni la respuesta
+       ni el acta contestaron. */
+    panel.textContent = 'No hay confirmación del servidor: no pudimos confirmar si tu intento quedó registrado (ni la respuesta ni el acta contestaron). ' +
+      'No lo vuelvas a enviar de inmediato. Espera 2 o 3 minutos: si el intento se registró, te llegará el comprobante por correo ' +
+      '(los comprobantes se envían por una cola automática, así que pueden tardar un par de minutos) y al volver a entrar con tus datos verás el intento usado. ' +
+      'Si no subió el intento y no llega el correo, puedes reenviar con seguridad: el sistema no duplica el mismo envío.';
     btn.disabled = false; btn.textContent = 'Enviar respuestas';
     return;
   }
@@ -3146,6 +3290,15 @@ $('btnEnviar').addEventListener('click', async () => {
   btn.classList.add('oculto');
   pintarOficial(salida.res, respuestas, salida.tipo === 'recuperado');
 });
+/* R32(d): el comprobante ya no se envía dentro de la respuesta. El backend lo deja
+   en cola (correo_estado='PENDIENTE') y un trigger de 1 minuto lo despacha, así que
+   el texto le dice la verdad al alumno en vez de prometer un envío instantáneo. */
+function textoComprobante(res){
+  if (res.correo_estado === 'SI') return 'fue enviado';
+  if (res.correo_estado === 'PENDIENTE' || res.correo_modo === 'cola')
+    return 'quedó en la cola de envío y te llegará en unos minutos';
+  return 'quedó <strong>pendiente de envío</strong> (avísanos si no lo recibes)';
+}
 function marcarErrores(respuestas){
   let marcadas = 0;
   for (const q of TEST.preguntas){
@@ -3184,7 +3337,7 @@ function pintarOficial(res, respuestas, recuperado){
     panel.className = 'aprobado';
     panel.innerHTML = notaRecuperado +
       `<p style="margin:0 0 8px; font:800 18px Arial,sans-serif">¡Felicitaciones, ${escT(alumno.nombre)}!</p>` +
-      `<p style="margin:0; font-weight:400">Has aprobado el examen con <strong>${res.correctas} de ${res.total}</strong> (${res.puntaje}%) en tu intento ${res.intento}. Tu nota quedó registrada oficialmente y el comprobante ${res.correo_estado === 'SI' ? 'fue enviado' : 'quedó <strong>pendiente de envío</strong>'} a <strong>${escT(alumno.correo)}</strong>.</p>` +
+      `<p style="margin:0; font-weight:400">Has aprobado el examen con <strong>${res.correctas} de ${res.total}</strong> (${res.puntaje}%) en tu intento ${res.intento}. Tu nota quedó registrada oficialmente y el comprobante ${textoComprobante(res)} a <strong>${escT(alumno.correo)}</strong>.</p>` +
       `<p style="margin:8px 0 0; font-weight:400">No necesitas rendir más intentos: con la aprobación tu proceso de evaluación queda cerrado. Gracias por el esfuerzo y la dedicación demostrada.</p>`;
     $('btnCerrar').classList.remove('oculto');
   } else if (res.restantes > 0){
@@ -3256,10 +3409,10 @@ if (!CONFIGURADO){
   chip('Backend sin configurar');
 } else {
   chipOficial();
-  // Precalentamiento (regresión R27): el servidor de Apps Script tarda hasta ~30 s en
-  // despertar la primera vez. Al abrir el portal se envía un GET liviano que lo despierta
-  // mientras el alumno escribe sus datos: la entrada deja de sentirse lenta.
-  fetch(URL_BACKEND + '?accion=despertar', {keepalive:true}).catch(() => {});
+  /* R32: precalentamiento con fast-path real en el backend + ping temprano en el
+     <head>. La defensa principal contra el cold start es el trigger keepWarm del
+     servidor (ver README-DESPLEGUE); este ping es un refuerzo. */
+  precalentar();
 }
 
 </script>
